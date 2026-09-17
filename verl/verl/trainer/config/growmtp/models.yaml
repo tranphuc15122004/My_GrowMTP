@@ -1,0 +1,38 @@
+qwen3_4b:
+  checkpoint: Qwen/Qwen3-4B
+  family: qwen3
+  random_head: true
+  depth: 5
+  supported_depths:
+  - 5
+  steps: 500
+  response_length: 8192
+  head_lr: 0.0003
+  thinking: true
+  download_url: https://huggingface.co/Qwen/Qwen3-4B
+mimo_7b:
+  checkpoint: XiaomiMiMo/MiMo-7B-SFT
+  family: mimo
+  random_head: false
+  depth: 5
+  supported_depths:
+  - 3
+  - 5
+  - 7
+  steps: 200
+  response_length: 8192
+  head_lr: 0.0001
+  thinking: false
+  download_url: https://huggingface.co/XiaomiMiMo/MiMo-7B-SFT
+qwen3_5_4b:
+  checkpoint: Qwen/Qwen3.5-4B-Base
+  family: qwen3_5
+  random_head: false
+  depth: 3
+  supported_depths:
+  - 3
+  steps: 200
+  response_length: 16384
+  head_lr: 0.0001
+  thinking: false
+  download_url: https://huggingface.co/Qwen/Qwen3.5-4B-Base
