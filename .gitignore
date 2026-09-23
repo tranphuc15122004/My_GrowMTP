@@ -1,0 +1,41 @@
+# NOTE: extermal/ is intentionally NOT ignored -- those reference repos are kept.
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+
+# --- Caches / tooling ---
+.serena/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+.hypothesis/
+.coverage
+coverage.xml
+htmlcov/
+
+# --- Training / experiment outputs ---
+outputs/
+wandb/
+logs/
+*.log
+*.pth
+*.safetensors
+checkpoints/
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+*.swp
+*~
