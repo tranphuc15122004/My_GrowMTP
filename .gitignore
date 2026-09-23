@@ -39,3 +39,6 @@ checkpoints/
 Thumbs.db
 *.swp
 *~
+
+
+data/
