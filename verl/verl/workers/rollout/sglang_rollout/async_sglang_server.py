@@ -48,8 +48,12 @@ from verl.utils.net_utils import get_free_port, is_valid_ipv6_address
 from verl.utils.profiler import DistProfiler, build_sglang_profiler_args
 from verl.workers.config import HFModelConfig, RolloutConfig
 from verl.workers.rollout.replica import RolloutMode, RolloutReplica, TokenOutput
+from verl.workers.rollout.sglang_rollout.lora_compat import (
+    configure_lora_server_args,
+    lora_adapter_enabled,
+    lora_adapter_name,
+)
 from verl.workers.rollout.sglang_rollout.sglang_rollout import _set_envs_and_config
-from verl.workers.rollout.sglang_rollout.utils import SGLANG_LORA_NAME
 from verl.workers.rollout.utils import get_max_position_embeddings, run_uvicorn
 
 logger = logging.getLogger(__file__)
@@ -298,15 +302,9 @@ class SGLangHttpServer:
             **engine_kwargs,
         }
 
-        # update lora-related args
-        if self.model_config.lora_rank > 0:
-            args.update(
-                {
-                    "enable_lora": True,
-                    "max_lora_rank": self.model_config.lora_rank,
-                    "lora_target_modules": self.model_config.target_modules,
-                }
-            )
+        # A merged adapter is synchronized as full model weights, so SGLang
+        # must not enable its dynamic-LoRA path (which rejects EAGLE/MTP).
+        configure_lora_server_args(args, self.model_config)
         # Only set dist_init_addr for multi-node; for single-node, let SGLang
         # handle port selection internally via nccl_port to avoid conflicts.
         if self.nnodes > 1:
@@ -453,9 +451,7 @@ class SGLangHttpServer:
 
     @property
     def lora_as_adapter(self) -> bool:
-        return (
-            self.model_config.lora_rank > 0 or self.model_config.lora.get("rank", 0) > 0
-        ) and not self.model_config.lora.get("merge", False)
+        return lora_adapter_enabled(self.model_config)
 
     async def sleep(self):
         if self.node_rank != 0 or not self.config.free_cache_engine:
@@ -603,9 +599,11 @@ class SGLangHttpServer:
 
         generate_request = GenerateReqInput(**request)
 
-        # Add lora request
-        if self.model_config.lora_rank > 0:
-            generate_request.lora_path = SGLANG_LORA_NAME
+        # Merged LoRA weights are already part of the synchronized base model;
+        # naming a dynamic adapter here would ask SGLang for one that was not loaded.
+        lora_path = lora_adapter_name(self.model_config)
+        if lora_path is not None:
+            generate_request.lora_path = lora_path
 
         output = await self.tokenizer_manager.generate_request(generate_request, None).__anext__()
         meta_info = output.get("meta_info", {})

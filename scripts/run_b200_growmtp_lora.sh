@@ -14,6 +14,8 @@ RUN_OUTPUT_DIR="${RUN_OUTPUT_DIR:-/workspace/storage-shared/nlp/dungdx4/phuc_pro
 
 # smoke: 2 short steps. full: repo preset (500 steps, 8192 response tokens).
 RUN_MODE="${RUN_MODE:-smoke}"
+# Keep PEFT training, but merge the adapter into rollout weights because
+# SGLang's dynamic-LoRA path rejects GrowMTP's EAGLE speculative decoding.
 LORA_RANK="${LORA_RANK:-16}"
 LORA_ALPHA="${LORA_ALPHA:-32}"
 TARGET_MODULES_JSON="${TARGET_MODULES_JSON:-[\"q_proj\",\"v_proj\"]}"
@@ -143,6 +145,7 @@ GROWMTP_PYTHON="$GROWMTP_PYTHON" bash "$REPO_ROOT/scripts/train.sh" \
     --depth 5 \
     "actor_rollout_ref.model.lora_rank=$LORA_RANK" \
     "actor_rollout_ref.model.lora_alpha=$LORA_ALPHA" \
+    actor_rollout_ref.model.lora.merge=true \
     "actor_rollout_ref.model.target_modules=$TARGET_MODULES_JSON" \
     "data.train_batch_size=$TRAIN_BATCH_SIZE" \
     "actor_rollout_ref.rollout.n=$ROLLOUT_N" \
