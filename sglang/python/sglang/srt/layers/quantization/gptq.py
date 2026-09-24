@@ -62,10 +62,16 @@ if TYPE_CHECKING:
     )
 
 _is_cuda = is_cuda()
+gptq_gemm = None
+gptq_shuffle = None
 
 if _is_cuda:
-    from sgl_kernel import gptq_gemm, gptq_shuffle
+    # These legacy kernels are not exported by every sglang-kernel build.
+    # Importing the quantization registry must still work for non-GPTQ models.
+    import sgl_kernel
 
+    gptq_gemm = getattr(sgl_kernel, "gptq_gemm", None)
+    gptq_shuffle = getattr(sgl_kernel, "gptq_shuffle", None)
     from sglang.jit_kernel.gptq_marlin_repack import gptq_marlin_repack
 
 _is_npu = is_npu()
@@ -75,6 +81,16 @@ if _is_npu:
 
 logger = logging.getLogger(__name__)
 ScalarType, scalar_types = get_scalar_types()
+
+
+def _require_gptq_kernel(kernel_name: str, kernel: Optional[Callable]) -> Callable:
+    if kernel is None:
+        raise RuntimeError(
+            f"sglang-kernel does not provide {kernel_name}; the selected GPTQ "
+            "quantization path requires the legacy GPTQ kernels. Use a compatible "
+            "sglang-kernel build or a supported GPTQ Marlin checkpoint."
+        )
+    return kernel
 
 
 def check_marlin_format(hf_quant_cfg: Dict[str, Any]) -> bool:
@@ -583,7 +599,9 @@ class GPTQLinearMethod(LinearMethodBase):
                 layer.g_idx.data = torch.empty(
                     (0,), dtype=torch.int, device=layer.g_idx.device
                 )
-            gptq_shuffle(layer.qweight, layer.g_idx, self.quant_config.weight_bits)
+            _require_gptq_kernel("gptq_shuffle", gptq_shuffle)(
+                layer.qweight, layer.g_idx, self.quant_config.weight_bits
+            )
 
     def apply(
         self,
@@ -594,7 +612,7 @@ class GPTQLinearMethod(LinearMethodBase):
         out_shape = x.shape[:-1] + (layer.qweight.shape[-1],)
         reshaped_x = x.reshape(-1, x.shape[-1])
 
-        output = gptq_gemm(
+        output = _require_gptq_kernel("gptq_gemm", gptq_gemm)(
             reshaped_x,
             layer.qweight,
             layer.qzeros,

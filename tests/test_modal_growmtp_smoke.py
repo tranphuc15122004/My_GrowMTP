@@ -60,7 +60,7 @@ class ModalSmokeEnvironmentTests(unittest.TestCase):
         self.assertIn("flashinfer_python==0.6.18.post1", constraints)
         self.assertIn("apache-tvm-ffi==0.1.11", constraints)
         self.assertIn("sgl-deep-gemm==0.1.7", constraints)
-        self.assertIn("sglang-kernel==0.4.6.post1", constraints)
+        self.assertIn("sglang-kernel==0.4.7", constraints)
         self.assertIn("nvidia-cutlass-dsl==4.7.1", constraints)
         self.assertIn("kernels==0.14.1", constraints)
 
