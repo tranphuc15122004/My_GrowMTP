@@ -43,11 +43,14 @@ from sglang.srt.managers.io_struct import (
 from sglang.srt.managers.tokenizer_manager import ServerStatus
 
 from verl.utils.config import omega_conf_to_dataclass
-from verl.utils.device import get_visible_devices_keyword
+from verl.utils.device import get_device_capability, get_visible_devices_keyword
 from verl.utils.net_utils import get_free_port, is_valid_ipv6_address
 from verl.utils.profiler import DistProfiler, build_sglang_profiler_args
 from verl.workers.config import HFModelConfig, RolloutConfig
 from verl.workers.rollout.replica import RolloutMode, RolloutReplica, TokenOutput
+from verl.workers.rollout.sglang_rollout.attention_backend import (
+    resolve_sglang_attention_backend,
+)
 from verl.workers.rollout.sglang_rollout.lora_compat import (
     configure_lora_server_args,
     lora_adapter_enabled,
@@ -258,6 +261,15 @@ class SGLangHttpServer:
 
         engine_kwargs = self.config.get("engine_kwargs", {}).get("sglang", {}) or {}
         attention_backend = engine_kwargs.pop("attention_backend", None)
+        compute_capability = get_device_capability(self.base_gpu_id)
+        attention_backend = resolve_sglang_attention_backend(
+            attention_backend, compute_capability
+        )
+        logger.info(
+            "Using SGLang attention backend %s for CUDA compute capability %s",
+            attention_backend,
+            compute_capability,
+        )
         quantization = self.config.get("quantization", None)
         if quantization is not None:
             if quantization == "fp8":
@@ -292,7 +304,7 @@ class SGLangHttpServer:
             "max_running_requests": self.config.get("max_num_seqs", None),
             "log_level": "error",
             "mm_attention_backend": "fa3",
-            "attention_backend": attention_backend if attention_backend is not None else "fa3",
+            "attention_backend": attention_backend,
             "skip_tokenizer_init": self.config.skip_tokenizer_init,
             "skip_server_warmup": True,
             "quantization": quantization,
