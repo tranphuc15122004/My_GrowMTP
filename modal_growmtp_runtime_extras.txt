@@ -1,0 +1,4 @@
+# Required by verl.trainer.ppo.ray_trainer -> workers.rollout.llm_server.
+# This transitive runtime dependency is not listed in the checked-in
+# verl/requirements.txt, but the actual PPO entrypoint imports it directly.
+cachetools

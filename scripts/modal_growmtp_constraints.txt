@@ -1,0 +1,15 @@
+# Core versions mirrored from /home/tuantb/fast_infer_text_sum/.venv or the
+# GrowMTP reference requirements. The B200 log previously showed TensorDict
+# 0.14.2; this run intentionally uses the repository-supported <=0.10.0 range.
+torch==2.11.0
+transformers==5.12.1
+numpy<2.0.0
+omegaconf==2.3.1
+peft==0.20.0
+accelerate==1.14.0
+pyarrow==24.0.0
+tokenizers==0.22.2
+safetensors==0.8.0
+ray==2.55.1
+tensordict==0.10.0
+sglang-kernel==0.4.2.post2
