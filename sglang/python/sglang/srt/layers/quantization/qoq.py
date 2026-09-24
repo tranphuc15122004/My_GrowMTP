@@ -20,7 +20,12 @@ from sglang.srt.utils import is_cuda
 
 _is_cuda = is_cuda()
 if _is_cuda:
-    from sgl_kernel import qserve_w4a8_per_chn_gemm, qserve_w4a8_per_group_gemm
+    try:
+        from sgl_kernel import qserve_w4a8_per_chn_gemm, qserve_w4a8_per_group_gemm
+    except ImportError:
+        # These legacy QoQ kernels are not included in the Torch 2.13 wheel.
+        qserve_w4a8_per_chn_gemm = None
+        qserve_w4a8_per_group_gemm = None
 
 
 QoQ_SUPPORTED_WEIGHT_BITS = [4]
@@ -223,6 +228,8 @@ class QoQLinearMethod(LinearMethodBase):
         bias: Optional[torch.Tensor] = None,
     ):
         assert x.dtype == torch.float16, "QoQ only supports float16 input now"
+        if qserve_w4a8_per_chn_gemm is None or qserve_w4a8_per_group_gemm is None:
+            raise RuntimeError("QoQ quantization requires the optional legacy sgl-kernel QoQ ops")
         if self.quant_config.group_size == -1:
             x_q, x_scale, x_sum = per_token_quant_int8(
                 x, scale_dtype=x.dtype, cal_sum=True

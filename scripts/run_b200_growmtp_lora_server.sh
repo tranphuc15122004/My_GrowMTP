@@ -5,7 +5,7 @@ set -Eeuo pipefail
 # before invoking this wrapper if a path or output destination changes.
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
-GROWMTP_PYTHON="${GROWMTP_PYTHON:-/workspace/storage-shared/nlp/dungdx4/phuc_projects/phucvenv/bin/python}"
+GROWMTP_PYTHON="${GROWMTP_PYTHON:-/home/tuantb/fast_infer_text_sum/.venv/bin/python}"
 DATA_DIR="${DATA_DIR:-/workspace/storage-shared/nlp/dungdx4/phuc_projects/data/DAPO-math-17.4K}"
 TRAIN_FILE="${TRAIN_FILE:-${DATA_DIR}/train.parquet}"
 VAL_FILE="${VAL_FILE:-${DATA_DIR}/validation.parquet}"
@@ -29,6 +29,13 @@ RUN_OUTPUT_DIR="${RUN_OUTPUT_DIR:-/workspace/storage-shared/nlp/dungdx4/phuc_pro
 export GROWMTP_PYTHON DATA_DIR TRAIN_FILE VAL_FILE BASE_MODEL PREPARED_MODEL_DIR RUN_OUTPUT_DIR
 export PYTHONPATH="$REPO_ROOT/verl:$REPO_ROOT/sglang/python${PYTHONPATH:+:$PYTHONPATH}"
 
+if ! "$GROWMTP_PYTHON" "$SCRIPT_DIR/check_training_imports.py" \
+    || ! GROWMTP_PYTHON="$GROWMTP_PYTHON" bash "$SCRIPT_DIR/install.sh" --check; then
+    printf 'GrowMTP dependencies are incomplete; installing the pinned runtime into %s.\n' "$GROWMTP_PYTHON"
+    "$GROWMTP_PYTHON" "$SCRIPT_DIR/install_modal_image_deps.py" --repo-root "$REPO_ROOT"
+fi
+
 printf 'Preflighting the real trainer before any model preparation/download.\n'
+GROWMTP_PYTHON="$GROWMTP_PYTHON" bash "$SCRIPT_DIR/install.sh" --check
 "$GROWMTP_PYTHON" "$SCRIPT_DIR/check_training_imports.py"
 exec bash "$SCRIPT_DIR/run_b200_growmtp_lora.sh"

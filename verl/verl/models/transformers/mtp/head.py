@@ -87,6 +87,8 @@ class MTPHead(nn.Module):
 
 
 def shared_layers(model):
+    if hasattr(model, "get_input_embeddings"):
+        return model.get_input_embeddings(), model.lm_head
     if hasattr(model.model, "language_model"):
         return model.model.language_model.embed_tokens, model.lm_head
     return model.model.embed_tokens, model.lm_head

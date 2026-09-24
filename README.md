@@ -14,7 +14,7 @@ Autoregressive rollout generation is a major bottleneck in RL post-training. Gro
 
 ## ⚙️ Environment
 
-The reference environment uses Linux, Python 3.12, PyTorch 2.11.0 with CUDA 13.0, Transformers 5.3.0, TensorDict 0.10.0, Ray 2.55.1, and `sglang-kernel` 0.4.2.post2. Experiments use 8 H800 GPUs.
+The updated B200 reference environment uses Linux, Python 3.12, PyTorch 2.13.0 with CUDA 13.0, Transformers 5.12.1, TensorDict 0.10.0, Ray 2.55.1, FlashInfer 0.6.18.post1, and `sglang-kernel` 0.4.2.post2. Experiments use 8 H800 GPUs.
 
 Start from an environment with the dependencies in `verl/requirements.txt` and `sglang/python/pyproject.toml` installed, then run:
 

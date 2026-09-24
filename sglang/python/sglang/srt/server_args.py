@@ -77,6 +77,18 @@ from sglang.utils import is_in_ci
 
 logger = logging.getLogger(__name__)
 
+
+def _default_grpc_port(http_port: int) -> int:
+    """Choose the legacy HTTP-to-gRPC port offset within the TCP port range.
+
+    Rollout adapters may choose an ephemeral HTTP port. Adding 10000 to an
+    ephemeral port above 55535 otherwise produces an invalid gRPC port. Keep
+    the existing +10000 convention where it fits, and use -10000 at the upper
+    end of the TCP range.
+    """
+    return http_port + 10000 if http_port <= 55535 else http_port - 10000
+
+
 # Define constants
 DEFAULT_UVICORN_ACCESS_LOG_EXCLUDE_PREFIXES = ()
 MIMO_V2_MODEL_ARCHS = (
@@ -1149,7 +1161,9 @@ class ServerArgs:
 
         grpc_port_env = envs.SGLANG_GRPC_PORT.get()
         self.grpc_port = (
-            grpc_port_env if grpc_port_env is not None else self.port + 10000
+            grpc_port_env
+            if grpc_port_env is not None
+            else _default_grpc_port(self.port)
         )
 
         if not (1 <= self.grpc_port <= 65535):

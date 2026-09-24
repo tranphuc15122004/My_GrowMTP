@@ -1,17 +1,21 @@
-# Modal H100 mirror for the selected Python 3.12 / Torch 2.11 cu130 stack.
+# Modal Blackwell mirror for the updated B200 Python 3.12 / Torch 2.13 cu130 stack.
 # GrowMTP's B200 log had TensorDict 0.14.2, but this repo requires <=0.10.0.
 # Transformers 5.12.1's SGLang import path is incompatible with kernels >=0.15,
 # which require version/revision arguments; 0.14.1 predates that enforcement.
-torch==2.11.0
+torch==2.13.0
 transformers==5.12.1
 numpy<2.0.0
 omegaconf==2.3.1
 peft==0.20.0
-accelerate==1.14.0
-pyarrow==24.0.0
+accelerate==1.15.0
+pyarrow==25.0.1
 tokenizers==0.22.2
 safetensors==0.8.0
 ray==2.55.1
 tensordict==0.10.0
-sglang-kernel==0.4.2.post2
+sglang-kernel==0.4.6.post1
+flashinfer_python==0.6.18.post1
+apache-tvm-ffi==0.1.11
+sgl-deep-gemm==0.1.7
+cachetools==7.1.4
 kernels==0.14.1

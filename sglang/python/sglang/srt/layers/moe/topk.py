@@ -129,7 +129,10 @@ _use_aiter = get_bool_env_var("SGLANG_USE_AITER") and _is_hip
 _is_musa = is_musa()
 
 if _is_cuda:
-    from sgl_kernel import moe_fused_gate
+    try:
+        from sgl_kernel import moe_fused_gate
+    except ImportError:
+        moe_fused_gate = None
 
     try:
         from flashinfer.fused_moe import fused_topk_deepseek as _fused_topk_deepseek
@@ -168,8 +171,8 @@ if _is_cuda:
 
     try:
         from sgl_kernel import kimi_k2_moe_fused_gate
-    except ImportError as e:
-        pass
+    except ImportError:
+        kimi_k2_moe_fused_gate = None
 
 if _is_cuda or _is_hip or _is_xpu:
     from sgl_kernel import topk_softmax
@@ -1075,6 +1078,7 @@ def biased_grouped_topk_gpu(
 
     elif (
         _is_cuda
+        and moe_fused_gate is not None
         # moe_fused_gate kernel ensures that num_experts/num_expert_group does not exceed MAX_VPT=32 now. And when kernel can handle MAX_VPT > 32, we can remove this assertion.
         and experts_per_group <= 32
         and is_power_of_two(num_experts)
@@ -1130,7 +1134,7 @@ def biased_grouped_topk_gpu(
     else:
         # Use optimized path for Kimi K2 (384 experts with num_expert_group=1)
         num_experts = gating_output.shape[1]
-        if _is_cuda and num_experts == 384 and num_expert_group == 1:
+        if _is_cuda and kimi_k2_moe_fused_gate is not None and num_experts == 384 and num_expert_group == 1:
             return kimi_k2_moe_fused_gate(
                 gating_output.to(dtype=torch.float32),
                 correction_bias,
@@ -1485,7 +1489,7 @@ def select_experts(
 # Register fake implementations for torch.compile support
 if _is_cuda:
 
-    @torch.library.register_fake("sgl_kernel::moe_fused_gate")
+    @register_fake_if_exists("sgl_kernel::moe_fused_gate")
     def _moe_fused_gate(
         input_tensor,
         bias,

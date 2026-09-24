@@ -12,7 +12,7 @@ BASE_MODEL="${BASE_MODEL:-Qwen/Qwen3-4B}"
 PREPARED_MODEL_DIR="${PREPARED_MODEL_DIR:-/workspace/storage-shared/nlp/dungdx4/phuc_projects/models/Qwen3-4B-growmtp-fresh}"
 RUN_OUTPUT_DIR="${RUN_OUTPUT_DIR:-/workspace/storage-shared/nlp/dungdx4/phuc_projects/outputs/qwen3-4b-growmtp-lora-fresh}"
 
-# smoke: 2 short steps. full: repo preset (500 steps, 8192 response tokens).
+# smoke: one optimizer step over two rollouts of one prompt. full: repo preset (500 steps, 8192 response tokens).
 RUN_MODE="${RUN_MODE:-smoke}"
 # Keep PEFT training, but merge the adapter into rollout weights because
 # SGLang's dynamic-LoRA path rejects GrowMTP's EAGLE speculative decoding.
@@ -25,9 +25,15 @@ TARGET_MODULES_JSON="${TARGET_MODULES_JSON:-[\"q_proj\",\"v_proj\"]}"
 FULL_TEST_FREQ="${FULL_TEST_FREQ:--1}"
 REQUIRE_B200="${REQUIRE_B200:-1}"
 
+# Transformers 5.12.1 with Torch 2.13/CUDA 13 does not have a published
+# flash-attn2 kernel variant yet. SDPA is supported on B200 and Blackwell GPUs.
+ATTN_IMPLEMENTATION="${ATTN_IMPLEMENTATION:-sdpa}"
+
 # Add repo-specific Hydra overrides here if needed, for example:
 # EXTRA_HYDRA_OVERRIDES+=(actor_rollout_ref.actor.optim.lr=1e-6)
-EXTRA_HYDRA_OVERRIDES=()
+EXTRA_HYDRA_OVERRIDES=(
+    "++actor_rollout_ref.model.override_config.attn_implementation=${ATTN_IMPLEMENTATION}"
+)
 
 die() {
     printf 'ERROR: %s\n' "$*" >&2
@@ -99,14 +105,15 @@ PY
 
 case "$RUN_MODE" in
     smoke)
-        TRAIN_STEPS=2
-        RESPONSE_LENGTH=512
-        TRAIN_BATCH_SIZE=2
-        ROLLOUT_N=2
-        PPO_MINI_BATCH_SIZE=2
+        TRAIN_STEPS="${TRAIN_STEPS:-1}"
+        RESPONSE_LENGTH="${RESPONSE_LENGTH:-128}"
+        TRAIN_BATCH_SIZE="${TRAIN_BATCH_SIZE:-1}"
+        ROLLOUT_N="${ROLLOUT_N:-2}"
+        AGENT_LOOP_WORKERS="${AGENT_LOOP_WORKERS:-$ROLLOUT_N}"
+        PPO_MINI_BATCH_SIZE="${PPO_MINI_BATCH_SIZE:-1}"
         MAX_BATCHED_TOKENS=4096
         MAX_TOKEN_LEN_PER_GPU=8192
-        SAVE_FREQ=2
+        SAVE_FREQ="${SAVE_FREQ:-1}"
         TEST_FREQ=-1
         ;;
     full)
@@ -114,6 +121,7 @@ case "$RUN_MODE" in
         RESPONSE_LENGTH=8192
         TRAIN_BATCH_SIZE=64
         ROLLOUT_N=8
+        AGENT_LOOP_WORKERS=8
         PPO_MINI_BATCH_SIZE=64
         MAX_BATCHED_TOKENS=32768
         MAX_TOKEN_LEN_PER_GPU=32768
@@ -149,6 +157,7 @@ GROWMTP_PYTHON="$GROWMTP_PYTHON" bash "$REPO_ROOT/scripts/train.sh" \
     "actor_rollout_ref.model.target_modules=$TARGET_MODULES_JSON" \
     "data.train_batch_size=$TRAIN_BATCH_SIZE" \
     "actor_rollout_ref.rollout.n=$ROLLOUT_N" \
+    "actor_rollout_ref.rollout.agent.num_workers=$AGENT_LOOP_WORKERS" \
     "actor_rollout_ref.actor.ppo_mini_batch_size=$PPO_MINI_BATCH_SIZE" \
     actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=1 \
     "actor_rollout_ref.actor.ppo_max_token_len_per_gpu=$MAX_TOKEN_LEN_PER_GPU" \

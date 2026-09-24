@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the GrowMTP LoRA smoke pipeline on one Modal H100 (CUDA 13.0)."""
+"""Run a one-prompt GrowMTP LoRA smoke pipeline on Modal Blackwell (CUDA 13.0)."""
 
 from __future__ import annotations
 
@@ -24,6 +24,7 @@ TRAIN_NAME = "dapo-math-17k-train.parquet"
 VAL_NAME = "dapo-math-17k-validation.parquet"
 EXPECTED_ROWS = {TRAIN_NAME: 16_398, VAL_NAME: 1_000}
 APP = modal.App("growmtp-qwen3-4b-lora-smoke")
+MODAL_GPU = "RTX-PRO-6000"
 
 
 def build_smoke_env(
@@ -46,6 +47,14 @@ def build_smoke_env(
             "RUN_OUTPUT_DIR": run_output_dir,
             "RUN_MODE": "smoke",
             "REQUIRE_B200": "0",
+            "ATTN_IMPLEMENTATION": "sdpa",
+            "TRAIN_STEPS": "1",
+            "TRAIN_BATCH_SIZE": "1",
+            "ROLLOUT_N": "2",
+            "AGENT_LOOP_WORKERS": "2",
+            "PPO_MINI_BATCH_SIZE": "1",
+            "RESPONSE_LENGTH": "128",
+            "SAVE_FREQ": "1",
         }
     )
     return env
@@ -133,6 +142,12 @@ def _verify_parquets() -> dict[str, int]:
 def _versions() -> dict[str, str]:
     names = (
         "torch",
+        "torchaudio",
+        "torchvision",
+        "triton",
+        "flashinfer-python",
+        "flashinfer-cubin",
+        "kernels",
         "transformers",
         "omegaconf",
         "peft",
@@ -159,15 +174,20 @@ IMAGE = (
         "nvidia/cuda:13.0.0-devel-ubuntu24.04", add_python="3.12"
     )
     .apt_install("build-essential", "cmake", "git", "libnuma-dev", "ninja-build")
-    .add_local_dir(str(ROOT / "verl"), remote_path=str(REMOTE_ROOT / "verl"))
-    .add_local_dir(str(ROOT / "sglang/python"), remote_path=str(REMOTE_ROOT / "sglang/python"))
-    .add_local_dir(str(ROOT / "scripts"), remote_path=str(REMOTE_ROOT / "scripts"))
-    .add_local_file(str(ROOT / "data" / TRAIN_NAME), remote_path=str(REMOTE_DATA / TRAIN_NAME))
-    .add_local_file(str(ROOT / "data" / VAL_NAME), remote_path=str(REMOTE_DATA / VAL_NAME))
+    .add_local_dir(str(ROOT / "verl"), remote_path=str(REMOTE_ROOT / "verl"), copy=True)
+    .add_local_dir(str(ROOT / "sglang/python"), remote_path=str(REMOTE_ROOT / "sglang/python"), copy=True)
+    .add_local_dir(str(ROOT / "scripts"), remote_path=str(REMOTE_ROOT / "scripts"), copy=True)
+    .add_local_file(str(ROOT / "data" / TRAIN_NAME), remote_path=str(REMOTE_DATA / TRAIN_NAME), copy=True)
+    .add_local_file(str(ROOT / "data" / VAL_NAME), remote_path=str(REMOTE_DATA / VAL_NAME), copy=True)
+    .add_local_file(
+        str(ROOT / "modal_growmtp_runtime_extras.txt"),
+        remote_path=str(REMOTE_ROOT / "modal_growmtp_runtime_extras.txt"),
+        copy=True,
+    )
     .run_commands(
         "python -m pip install --upgrade pip setuptools wheel",
         "python -m pip install --index-url https://download.pytorch.org/whl/cu130 "
-        "torch==2.11.0 torchaudio==2.11.0 torchvision==0.26.0",
+        "torch==2.13.0 torchaudio==2.11.0 torchvision==0.28.0",
         f"python {REMOTE_ROOT / 'scripts/install_modal_image_deps.py'} --repo-root {REMOTE_ROOT}",
     )
 )
@@ -194,15 +214,15 @@ def dependency_data_preflight() -> dict[str, object]:
     return {"parquet_rows": counts, "package_versions": _versions()}
 
 
-@APP.function(gpu="H100!", cpu=16.0, memory=131072, timeout=1200, retries=0, image=IMAGE)
+@APP.function(gpu=MODAL_GPU, cpu=16.0, memory=131072, timeout=1800, retries=0, image=IMAGE)
 def run_gpu_smoke() -> dict[str, object]:
     import torch
 
     gpu_name = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "CUDA unavailable"
-    if "H100" not in gpu_name.upper():
-        raise RuntimeError(f"Expected strict Modal H100 allocation; got {gpu_name}")
+    if "RTX PRO 6000" not in gpu_name.upper():
+        raise RuntimeError(f"Expected Modal RTX PRO 6000 allocation; got {gpu_name}")
     if not torch.cuda.is_bf16_supported():
-        raise RuntimeError(f"H100 does not report BF16 support (CUDA runtime {torch.version.cuda})")
+        raise RuntimeError(f"RTX PRO 6000 does not report BF16 support (CUDA runtime {torch.version.cuda})")
 
     print(
         "GPU runtime:",
@@ -246,9 +266,9 @@ def run_gpu_smoke() -> dict[str, object]:
                 ["bash", str(REMOTE_ROOT / "scripts/run_b200_growmtp_lora.sh")],
                 env=env,
                 cwd=REMOTE_ROOT,
-                label="Fresh Qwen3-4B LoRA + GrowMTP, two training steps",
+                label="Fresh Qwen3-4B LoRA + GrowMTP, one prompt and one training step",
             )
-            checkpoint = output / "global_step_2/actor/huggingface"
+            checkpoint = output / "global_step_1/actor/huggingface"
             if not checkpoint.is_dir() or not any(checkpoint.iterdir()):
                 raise FileNotFoundError(f"Expected non-empty checkpoint at {checkpoint}")
 
@@ -274,7 +294,7 @@ def run_gpu_smoke() -> dict[str, object]:
                 ],
                 env=env,
                 cwd=REMOTE_ROOT,
-                label="Load step-2 HF checkpoint with SGLang and generate a short response",
+                label="Load step-1 HF checkpoint with SGLang and generate a short response",
             )
             stdout_lines = [line.strip() for line in infer.stdout.splitlines() if line.strip()]
             if not stdout_lines:
@@ -295,7 +315,7 @@ def run_gpu_smoke() -> dict[str, object]:
                 "torch_cuda": torch.version.cuda,
                 "package_versions": versions,
                 "parquet_rows": counts,
-                "training_steps": 2,
+                "training_steps": 1,
                 "checkpoint": str(checkpoint),
                 "generated_text": generated_text,
                 "inference_metrics": metrics,
@@ -317,6 +337,6 @@ def main() -> None:
     print("Running CPU dependency/data preflight first; GPU is not allocated yet.", flush=True)
     preflight = dependency_data_preflight.remote()
     print("CPU preflight passed:", json.dumps(preflight, sort_keys=True), flush=True)
-    print("Starting one strict H100 invocation (timeout=20 min, retries=0).", flush=True)
+    print(f"Starting one {MODAL_GPU} invocation (timeout=30 min, retries=0).", flush=True)
     result = run_gpu_smoke.remote()
     print("FINAL MODAL SMOKE RESULT:", json.dumps(result, ensure_ascii=False, sort_keys=True), flush=True)

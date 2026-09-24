@@ -100,7 +100,15 @@ if _use_aiter:
 
 
 if _is_cuda:
-    from sgl_kernel import fp8_blockwise_scaled_mm, fp8_scaled_mm
+    from sgl_kernel import fp8_scaled_mm
+
+    try:
+        # sglang-kernel 0.4.6.post1+ (the PyTorch 2.13 CUDA wheels) moved this
+        # blockwise FP8 operation out of the AOT package. Keep SGLang 0.5.12
+        # importable and use its existing Triton path when the op is absent.
+        from sgl_kernel import fp8_blockwise_scaled_mm
+    except ImportError:
+        fp8_blockwise_scaled_mm = None
 
     from sglang.srt.utils.patch_torch import register_fake_if_exists
 
@@ -630,6 +638,13 @@ def cutlass_w8a8_block_fp8_linear_with_fallback(
 
     input_2d = input.view(-1, input.shape[-1])
     output_shape = [*input.shape[:-1], weight.shape[0]]
+
+    if fp8_blockwise_scaled_mm is None:
+        # PyTorch 2.13-compatible sglang-kernel wheels no longer expose this
+        # legacy CUTLASS op; the Triton implementation supports the same inputs.
+        return triton_w8a8_block_fp8_linear(
+            input, weight, block_size, weight_scale, input_scale, bias
+        )
 
     q_input, x_scale = per_token_group_quant_fp8(
         input_2d, block_size[1], column_major_scales=True

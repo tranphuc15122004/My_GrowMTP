@@ -45,7 +45,7 @@ IMAGE = (
     .run_commands(
         "python -m pip install --upgrade pip setuptools wheel",
         "python -m pip install --index-url https://download.pytorch.org/whl/cu130 "
-        "torch==2.11.0 torchaudio==2.11.0 torchvision==0.26.0",
+        "torch==2.13.0 torchaudio==2.11.0 torchvision==0.28.0",
         f"python {REMOTE_ROOT / 'scripts/install_modal_image_deps.py'} --repo-root {REMOTE_ROOT}",
     )
 )
