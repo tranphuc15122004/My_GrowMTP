@@ -1,0 +1,969 @@
+(TaskRunner pid=896203)                                  'use_prefix_grouper': False,
+(TaskRunner pid=896203)                                  'use_remove_padding': True,
+(TaskRunner pid=896203)                                  'use_torch_compile': False},
+(TaskRunner pid=896203)                        'hybrid_engine': True,
+(TaskRunner pid=896203)                        'model': {'_target_': 'verl.workers.config.HFModelConfig',
+(TaskRunner pid=896203)                                  'custom_chat_template': None,
+(TaskRunner pid=896203)                                  'enable_activation_offload': False,
+(TaskRunner pid=896203)                                  'enable_gradient_checkpointing': True,
+(TaskRunner pid=896203)                                  'exclude_modules': None,
+(TaskRunner pid=896203)                                  'external_lib': None,
+(TaskRunner pid=896203)                                  'fused_kernel_options': {'impl_backend': 'triton'},
+(TaskRunner pid=896203)                                  'hf_config_path': None,
+(TaskRunner pid=896203)                                  'lora': {'a2a_experimental': False,
+(TaskRunner pid=896203)                                           'adapter_path': None,
+(TaskRunner pid=896203)                                           'alpha': 32,
+(TaskRunner pid=896203)                                           'dropout': 0.0,
+(TaskRunner pid=896203)                                           'dropout_position': 'pre',
+(TaskRunner pid=896203)                                           'dtype': None,
+(TaskRunner pid=896203)                                           'exclude_modules': [],
+(TaskRunner pid=896203)                                           'freeze_language_model': True,
+(TaskRunner pid=896203)                                           'freeze_vision_model': True,
+(TaskRunner pid=896203)                                           'freeze_vision_projection': True,
+(TaskRunner pid=896203)                                           'lora_A_init_method': 'xavier',
+(TaskRunner pid=896203)                                           'lora_B_init_method': 'zero',
+(TaskRunner pid=896203)                                           'merge': True,
+(TaskRunner pid=896203)                                           'rank': 0,
+(TaskRunner pid=896203)                                           'target_modules': ['linear_qkv',
+(TaskRunner pid=896203)                                                              'linear_proj',
+(TaskRunner pid=896203)                                                              'linear_fc1',
+(TaskRunner pid=896203)                                                              'linear_fc2'],
+(TaskRunner pid=896203)                                           'type': 'lora'},
+(TaskRunner pid=896203)                                  'lora_adapter_path': None,
+(TaskRunner pid=896203)                                  'lora_alpha': 32,
+(TaskRunner pid=896203)                                  'lora_rank': 16,
+(TaskRunner pid=896203)                                  'mtp': {'_target_': 'verl.workers.config.MtpConfig',
+(TaskRunner pid=896203)                                          'chunk_size': 1024,
+(TaskRunner pid=896203)                                          'detach_encoder': True,
+(TaskRunner pid=896203)                                          'enable': True,
+(TaskRunner pid=896203)                                          'enable_rollout': True,
+(TaskRunner pid=896203)                                          'enable_train': True,
+(TaskRunner pid=896203)                                          'growmtp': True,
+(TaskRunner pid=896203)                                          'learning_rate': 0.0003,
+(TaskRunner pid=896203)                                          'method': 'mtp',
+(TaskRunner pid=896203)                                          'min_lr_ratio': 0.1,
+(TaskRunner pid=896203)                                          'mtp_loss_scaling_factor': 0.1,
+(TaskRunner pid=896203)                                          'num_speculative_tokens': 1,
+(TaskRunner pid=896203)                                          'speculative_algorithm': 'EAGLE',
+(TaskRunner pid=896203)                                          'speculative_eagle_topk': 1,
+(TaskRunner pid=896203)                                          'speculative_num_draft_tokens': 6,
+(TaskRunner pid=896203)                                          'speculative_num_steps': 5,
+(TaskRunner pid=896203)                                          'teacher_topk': 64,
+(TaskRunner pid=896203)                                          'vocab_chunk_size': 256,
+(TaskRunner pid=896203)                                          'warmup_steps': 10},
+(TaskRunner pid=896203)                                  'override_config': {'attn_implementation': 'sdpa'},
+(TaskRunner pid=896203)                                  'path': '/workspace/storage-shared/nlp/dungdx4/phuc_projects/models/Qwen3-4B-growmtp-dapo-smoke-20260925-115323',
+(TaskRunner pid=896203)                                  'target_modules': ['q_proj', 'v_proj'],
+(TaskRunner pid=896203)                                  'tiled_mlp': {'enabled': False,
+(TaskRunner pid=896203)                                                'num_shards': 4},
+(TaskRunner pid=896203)                                  'tokenizer_path': None,
+(TaskRunner pid=896203)                                  'trust_remote_code': False,
+(TaskRunner pid=896203)                                  'use_fused_kernels': True,
+(TaskRunner pid=896203)                                  'use_liger': False,
+(TaskRunner pid=896203)                                  'use_remove_padding': True,
+(TaskRunner pid=896203)                                  'use_shm': False},
+(TaskRunner pid=896203)                        'nccl_timeout': 600,
+(TaskRunner pid=896203)                        'ref': {'_target_': 'verl.workers.config.FSDPActorConfig',
+(TaskRunner pid=896203)                                'entropy_checkpointing': False,
+(TaskRunner pid=896203)                                'entropy_from_logits_with_chunking': False,
+(TaskRunner pid=896203)                                'fsdp_config': {'_target_': 'verl.workers.config.FSDPEngineConfig',
+(TaskRunner pid=896203)                                                'dtype': 'bfloat16',
+(TaskRunner pid=896203)                                                'entropy_checkpointing': False,
+(TaskRunner pid=896203)                                                'entropy_from_logits_with_chunking': False,
+(TaskRunner pid=896203)                                                'forward_only': True,
+(TaskRunner pid=896203)                                                'forward_prefetch': False,
+(TaskRunner pid=896203)                                                'fsdp_size': -1,
+(TaskRunner pid=896203)                                                'full_determinism': False,
+(TaskRunner pid=896203)                                                'model_dtype': 'fp32',
+(TaskRunner pid=896203)                                                'offload_policy': False,
+(TaskRunner pid=896203)                                                'optimizer_offload': False,
+(TaskRunner pid=896203)                                                'param_offload': False,
+(TaskRunner pid=896203)                                                'qat': {'_target_': 'verl.workers.config.QATEngineConfig',
+(TaskRunner pid=896203)                                                        'activation_observer': 'static_minmax',
+(TaskRunner pid=896203)                                                        'enable': False,
+(TaskRunner pid=896203)                                                        'group_size': 16,
+(TaskRunner pid=896203)                                                        'ignore_patterns': ['lm_head',
+(TaskRunner pid=896203)                                                                            'embed_tokens',
+(TaskRunner pid=896203)                                                                            're:.*mlp.gate$'],
+(TaskRunner pid=896203)                                                        'mode': 'w4a16',
+(TaskRunner pid=896203)                                                        'quantization_config_path': None},
+(TaskRunner pid=896203)                                                'reshard_after_forward': True,
+(TaskRunner pid=896203)                                                'seed': 42,
+(TaskRunner pid=896203)                                                'strategy': 'fsdp',
+(TaskRunner pid=896203)                                                'ulysses_sequence_parallel_size': 1,
+(TaskRunner pid=896203)                                                'use_orig_params': False,
+(TaskRunner pid=896203)                                                'use_torch_compile': True,
+(TaskRunner pid=896203)                                                'wrap_policy': {'min_num_params': 0}},
+(TaskRunner pid=896203)                                'log_prob_max_token_len_per_gpu': 8192,
+(TaskRunner pid=896203)                                'log_prob_micro_batch_size': None,
+(TaskRunner pid=896203)                                'log_prob_micro_batch_size_per_gpu': 1,
+(TaskRunner pid=896203)                                'log_prob_use_dynamic_bsz': True,
+(TaskRunner pid=896203)                                'profiler': {'_target_': 'verl.utils.profiler.ProfilerConfig',
+(TaskRunner pid=896203)                                             'all_ranks': False,
+(TaskRunner pid=896203)                                             'enable': False,
+(TaskRunner pid=896203)                                             'ranks': [],
+(TaskRunner pid=896203)                                             'save_path': 'outputs/profile',
+(TaskRunner pid=896203)                                             'tool': None,
+(TaskRunner pid=896203)                                             'tool_config': {'npu': {'_target_': 'verl.utils.profiler.config.NPUToolConfig',
+(TaskRunner pid=896203)                                                                     'analysis': True,
+(TaskRunner pid=896203)                                                                     'contents': [],
+(TaskRunner pid=896203)                                                                     'discrete': False,
+(TaskRunner pid=896203)                                                                     'level': 'level0'},
+(TaskRunner pid=896203)                                                             'nsys': {'_target_': 'verl.utils.profiler.config.NsightToolConfig',
+(TaskRunner pid=896203)                                                                      'discrete': False},
+(TaskRunner pid=896203)                                                             'precision_debugger': {'_target_': 'verl.utils.profiler.config.PrecisionDebuggerToolConfig',
+(TaskRunner pid=896203)                                                                                    'config_path': None,
+(TaskRunner pid=896203)                                                                                    'stages': None,
+(TaskRunner pid=896203)                                                                                    'steps': None,
+(TaskRunner pid=896203)                                                                                    'strict': False},
+(TaskRunner pid=896203)                                                             'torch': {'_target_': 'verl.utils.profiler.config.TorchProfilerToolConfig',
+(TaskRunner pid=896203)                                                                       'contents': [],
+(TaskRunner pid=896203)                                                                       'discrete': False},
+(TaskRunner pid=896203)                                                             'torch_memory': {'_target_': 'verl.utils.profiler.config.TorchMemoryToolConfig',
+(TaskRunner pid=896203)                                                                              'stack_depth': 32,
+(TaskRunner pid=896203)                                                                              'trace_alloc_max_entries': 100000}}},
+(TaskRunner pid=896203)                                'rollout_n': 2,
+(TaskRunner pid=896203)                                'router_replay': {'_target_': 'verl.workers.config.RouterReplayConfig',
+(TaskRunner pid=896203)                                                  'mode': 'disabled',
+(TaskRunner pid=896203)                                                  'record_file': None,
+(TaskRunner pid=896203)                                                  'replay_file': None},
+(TaskRunner pid=896203)                                'strategy': 'fsdp2',
+(TaskRunner pid=896203)                                'ulysses_sequence_parallel_size': 1,
+(TaskRunner pid=896203)                                'use_torch_compile': False},
+(TaskRunner pid=896203)                        'rollout': {'_target_': 'verl.workers.config.RolloutConfig',
+(TaskRunner pid=896203)                                    'agent': {'_target_': 'verl.workers.config.AgentLoopConfig',
+(TaskRunner pid=896203)                                              'agent_loop_config_path': None,
+(TaskRunner pid=896203)                                              'custom_async_server': {'_target_': 'verl.workers.config.CustomAsyncServerConfig',
+(TaskRunner pid=896203)                                                                      'name': None,
+(TaskRunner pid=896203)                                                                      'path': None},
+(TaskRunner pid=896203)                                              'default_agent_loop': 'single_turn_agent',
+(TaskRunner pid=896203)                                              'num_workers': 2},
+(TaskRunner pid=896203)                                    'calculate_log_probs': False,
+(TaskRunner pid=896203)                                    'checkpoint_engine': {'_target_': 'verl.workers.config.CheckpointEngineConfig',
+(TaskRunner pid=896203)                                                          'backend': 'naive',
+(TaskRunner pid=896203)                                                          'custom_backend_module': None,
+(TaskRunner pid=896203)                                                          'engine_kwargs': {},
+(TaskRunner pid=896203)                                                          'update_weights_bucket_megabytes': 2048},
+(TaskRunner pid=896203)                                    'cudagraph_capture_sizes': None,
+(TaskRunner pid=896203)                                    'data_parallel_size': 1,
+(TaskRunner pid=896203)                                    'disable_log_stats': True,
+(TaskRunner pid=896203)                                    'disaggregation': {'bootstrap_port': None,
+(TaskRunner pid=896203)                                                       'decode_replicas': 1,
+(TaskRunner pid=896203)                                                       'decode_tensor_model_parallel_size': None,
+(TaskRunner pid=896203)                                                       'enabled': False,
+(TaskRunner pid=896203)                                                       'ib_device': None,
+(TaskRunner pid=896203)                                                       'prefill_replicas': 1,
+(TaskRunner pid=896203)                                                       'transfer_backend': 'nixl'},
+(TaskRunner pid=896203)                                    'do_sample': True,
+(TaskRunner pid=896203)                                    'dtype': 'bfloat16',
+(TaskRunner pid=896203)                                    'enable_chunked_prefill': True,
+(TaskRunner pid=896203)                                    'enable_prefix_caching': False,
+(TaskRunner pid=896203)                                    'enable_rollout_routing_replay': False,
+(TaskRunner pid=896203)                                    'enforce_eager': False,
+(TaskRunner pid=896203)                                    'engine_kwargs': {'sglang': {'disable_overlap_schedule': True,
+(TaskRunner pid=896203)                                                                 'disable_radix_cache': True,
+(TaskRunner pid=896203)                                                                 'max_running_requests': 72},
+(TaskRunner pid=896203)                                                      'trtllm': {},
+(TaskRunner pid=896203)                                                      'vllm': {}},
+(TaskRunner pid=896203)                                    'expert_parallel_size': 1,
+(TaskRunner pid=896203)                                    'free_cache_engine': True,
+(TaskRunner pid=896203)                                    'gpu_memory_utilization': 0.6,
+(TaskRunner pid=896203)                                    'ignore_eos': False,
+(TaskRunner pid=896203)                                    'layered_summon': False,
+(TaskRunner pid=896203)                                    'load_format': 'dummy',
+(TaskRunner pid=896203)                                    'log_prob_max_token_len_per_gpu': 8192,
+(TaskRunner pid=896203)                                    'log_prob_micro_batch_size': None,
+(TaskRunner pid=896203)                                    'log_prob_micro_batch_size_per_gpu': 1,
+(TaskRunner pid=896203)                                    'log_prob_use_dynamic_bsz': True,
+(TaskRunner pid=896203)                                    'logprobs_mode': 'processed_logprobs',
+(TaskRunner pid=896203)                                    'max_model_len': None,
+(TaskRunner pid=896203)                                    'max_num_batched_tokens': 4096,
+(TaskRunner pid=896203)                                    'max_num_seqs': 1024,
+(TaskRunner pid=896203)                                    'mode': 'async',
+(TaskRunner pid=896203)                                    'mtp': {'_target_': 'verl.workers.config.MtpConfig',
+(TaskRunner pid=896203)                                            'chunk_size': 1024,
+(TaskRunner pid=896203)                                            'detach_encoder': True,
+(TaskRunner pid=896203)                                            'enable': True,
+(TaskRunner pid=896203)                                            'enable_rollout': True,
+(TaskRunner pid=896203)                                            'enable_train': True,
+(TaskRunner pid=896203)                                            'growmtp': True,
+(TaskRunner pid=896203)                                            'learning_rate': 0.0003,
+(TaskRunner pid=896203)                                            'method': 'mtp',
+(TaskRunner pid=896203)                                            'min_lr_ratio': 0.1,
+(TaskRunner pid=896203)                                            'mtp_loss_scaling_factor': 0.1,
+(TaskRunner pid=896203)                                            'num_speculative_tokens': 1,
+(TaskRunner pid=896203)                                            'speculative_algorithm': 'EAGLE',
+(TaskRunner pid=896203)                                            'speculative_eagle_topk': 1,
+(TaskRunner pid=896203)                                            'speculative_num_draft_tokens': 6,
+(TaskRunner pid=896203)                                            'speculative_num_steps': 5,
+(TaskRunner pid=896203)                                            'teacher_topk': 64,
+(TaskRunner pid=896203)                                            'vocab_chunk_size': 256,
+(TaskRunner pid=896203)                                            'warmup_steps': 10},
+(TaskRunner pid=896203)                                    'multi_stage_wake_up': False,
+(TaskRunner pid=896203)                                    'multi_turn': {'_target_': 'verl.workers.config.MultiTurnConfig',
+(TaskRunner pid=896203)                                                   'enable': False,
+(TaskRunner pid=896203)                                                   'format': 'hermes',
+(TaskRunner pid=896203)                                                   'function_tool_path': None,
+(TaskRunner pid=896203)                                                   'max_assistant_turns': None,
+(TaskRunner pid=896203)                                                   'max_parallel_calls': 1,
+(TaskRunner pid=896203)                                                   'max_tool_response_length': 256,
+(TaskRunner pid=896203)                                                   'max_user_turns': None,
+(TaskRunner pid=896203)                                                   'num_repeat_rollouts': None,
+(TaskRunner pid=896203)                                                   'tokenization_sanity_check_mode': 'strict',
+(TaskRunner pid=896203)                                                   'tool_config_path': None,
+(TaskRunner pid=896203)                                                   'tool_response_truncate_side': 'middle',
+(TaskRunner pid=896203)                                                   'use_inference_chat_template': False},
+(TaskRunner pid=896203)                                    'n': 2,
+(TaskRunner pid=896203)                                    'n_gpus_per_node': 1,
+(TaskRunner pid=896203)                                    'name': 'sglang',
+(TaskRunner pid=896203)                                    'nnodes': 0,
+(TaskRunner pid=896203)                                    'over_sample_rate': 0,
+(TaskRunner pid=896203)                                    'pipeline_model_parallel_size': 1,
+(TaskRunner pid=896203)                                    'profiler': {'_target_': 'verl.utils.profiler.ProfilerConfig',
+(TaskRunner pid=896203)                                                 'all_ranks': False,
+(TaskRunner pid=896203)                                                 'enable': False,
+(TaskRunner pid=896203)                                                 'ranks': [],
+(TaskRunner pid=896203)                                                 'save_path': 'outputs/profile',
+(TaskRunner pid=896203)                                                 'tool': None,
+(TaskRunner pid=896203)                                                 'tool_config': {'npu': {'_target_': 'verl.utils.profiler.config.NPUToolConfig',
+(TaskRunner pid=896203)                                                                         'analysis': True,
+(TaskRunner pid=896203)                                                                         'contents': [],
+(TaskRunner pid=896203)                                                                         'discrete': False,
+(TaskRunner pid=896203)                                                                         'level': 'level0'},
+(TaskRunner pid=896203)                                                                 'precision_debugger': {'_target_': 'verl.utils.profiler.config.PrecisionDebuggerToolConfig',
+(TaskRunner pid=896203)                                                                                        'config_path': None,
+(TaskRunner pid=896203)                                                                                        'stages': None,
+(TaskRunner pid=896203)                                                                                        'steps': None,
+(TaskRunner pid=896203)                                                                                        'strict': False},
+(TaskRunner pid=896203)                                                                 'torch': {'_target_': 'verl.utils.profiler.config.TorchProfilerToolConfig',
+(TaskRunner pid=896203)                                                                           'contents': [],
+(TaskRunner pid=896203)                                                                           'discrete': False}}},
+(TaskRunner pid=896203)                                    'prometheus': {'_target_': 'verl.workers.config.PrometheusConfig',
+(TaskRunner pid=896203)                                                   'enable': False,
+(TaskRunner pid=896203)                                                   'file': '/tmp/ray/session_latest/metrics/prometheus/prometheus.yml',
+(TaskRunner pid=896203)                                                   'port': 9090,
+(TaskRunner pid=896203)                                                   'served_model_name': '/workspace/storage-shared/nlp/dungdx4/phuc_projects/models/Qwen3-4B-growmtp-dapo-smoke-20260925-115323'},
+(TaskRunner pid=896203)                                    'prompt_length': 1024,
+(TaskRunner pid=896203)                                    'qat': {'_target_': 'verl.workers.config.QATEngineConfig',
+(TaskRunner pid=896203)                                            'activation_observer': 'static_minmax',
+(TaskRunner pid=896203)                                            'enable': False,
+(TaskRunner pid=896203)                                            'group_size': 16,
+(TaskRunner pid=896203)                                            'ignore_patterns': ['lm_head',
+(TaskRunner pid=896203)                                                                'embed_tokens',
+(TaskRunner pid=896203)                                                                're:.*mlp.gate$'],
+(TaskRunner pid=896203)                                            'mode': 'w4a16',
+(TaskRunner pid=896203)                                            'quantization_config_path': None},
+(TaskRunner pid=896203)                                    'quantization': None,
+(TaskRunner pid=896203)                                    'quantization_config_file': None,
+(TaskRunner pid=896203)                                    'response_length': 128,
+(TaskRunner pid=896203)                                    'scheduling_policy': 'fcfs',
+(TaskRunner pid=896203)                                    'skip': {'_target_': 'verl.workers.config.SkipConfig',
+(TaskRunner pid=896203)                                             'action': 'cache',
+(TaskRunner pid=896203)                                             'dump_dir': '~/.verl/rollout_dump',
+(TaskRunner pid=896203)                                             'enable': False,
+(TaskRunner pid=896203)                                             'max_dump_step': 1},
+(TaskRunner pid=896203)                                    'skip_tokenizer_init': True,
+(TaskRunner pid=896203)                                    'temperature': 1.0,
+(TaskRunner pid=896203)                                    'tensor_model_parallel_size': 1,
+(TaskRunner pid=896203)                                    'top_k': -1,
+(TaskRunner pid=896203)                                    'top_p': 1.0,
+(TaskRunner pid=896203)                                    'trace': {'_target_': 'verl.workers.config.TraceConfig',
+(TaskRunner pid=896203)                                              'backend': None,
+(TaskRunner pid=896203)                                              'experiment_name': 'growmtp',
+(TaskRunner pid=896203)                                              'max_samples_per_step_per_worker': None,
+(TaskRunner pid=896203)                                              'project_name': 'growmtp',
+(TaskRunner pid=896203)                                              'token2text': False},
+(TaskRunner pid=896203)                                    'val_kwargs': {'_target_': 'verl.workers.config.SamplingConfig',
+(TaskRunner pid=896203)                                                   'do_sample': True,
+(TaskRunner pid=896203)                                                   'n': 1,
+(TaskRunner pid=896203)                                                   'temperature': 1.0,
+(TaskRunner pid=896203)                                                   'top_k': -1,
+(TaskRunner pid=896203)                                                   'top_p': 0.7}}},
+(TaskRunner pid=896203)  'algorithm': {'_target_': 'verl.trainer.config.AlgoConfig',
+(TaskRunner pid=896203)                'adv_estimator': 'grpo',
+(TaskRunner pid=896203)                'gamma': 1.0,
+(TaskRunner pid=896203)                'kl_ctrl': {'_target_': 'verl.trainer.config.KLControlConfig',
+(TaskRunner pid=896203)                            'horizon': 10000,
+(TaskRunner pid=896203)                            'kl_coef': 0.001,
+(TaskRunner pid=896203)                            'target_kl': 0.1,
+(TaskRunner pid=896203)                            'type': 'fixed'},
+(TaskRunner pid=896203)                'kl_penalty': 'kl',
+(TaskRunner pid=896203)                'lam': 1.0,
+(TaskRunner pid=896203)                'norm_adv_by_std_in_grpo': True,
+(TaskRunner pid=896203)                'pf_ppo': {'reweight_method': 'pow', 'weight_pow': 2.0},
+(TaskRunner pid=896203)                'rollout_correction': {'bypass_mode': False,
+(TaskRunner pid=896203)                                       'loss_type': 'ppo_clip',
+(TaskRunner pid=896203)                                       'rollout_is': None,
+(TaskRunner pid=896203)                                       'rollout_is_batch_normalize': False,
+(TaskRunner pid=896203)                                       'rollout_is_threshold': 2.0,
+(TaskRunner pid=896203)                                       'rollout_rs': None,
+(TaskRunner pid=896203)                                       'rollout_rs_threshold': None},
+(TaskRunner pid=896203)                'use_kl_in_reward': False,
+(TaskRunner pid=896203)                'use_pf_ppo': False},
+(TaskRunner pid=896203)  'critic': {'_target_': 'verl.workers.config.FSDPCriticConfig',
+(TaskRunner pid=896203)             'checkpoint': {'_target_': 'verl.trainer.config.CheckpointConfig',
+(TaskRunner pid=896203)                            'async_save': False,
+(TaskRunner pid=896203)                            'load_contents': ['model', 'optimizer', 'extra'],
+(TaskRunner pid=896203)                            'mbridge_config': {},
+(TaskRunner pid=896203)                            'save_contents': ['model', 'optimizer', 'extra']},
+(TaskRunner pid=896203)             'cliprange_value': 0.5,
+(TaskRunner pid=896203)             'data_loader_seed': 42,
+(TaskRunner pid=896203)             'enable': None,
+(TaskRunner pid=896203)             'forward_max_token_len_per_gpu': 32768,
+(TaskRunner pid=896203)             'forward_micro_batch_size': None,
+(TaskRunner pid=896203)             'forward_micro_batch_size_per_gpu': None,
+(TaskRunner pid=896203)             'fsdp': {'_target_': 'verl.workers.config.FSDPEngineConfig',
+(TaskRunner pid=896203)                      'dtype': 'bfloat16',
+(TaskRunner pid=896203)                      'entropy_checkpointing': False,
+(TaskRunner pid=896203)                      'entropy_from_logits_with_chunking': False,
+(TaskRunner pid=896203)                      'forward_only': False,
+(TaskRunner pid=896203)                      'forward_prefetch': False,
+(TaskRunner pid=896203)                      'fsdp_size': -1,
+(TaskRunner pid=896203)                      'full_determinism': False,
+(TaskRunner pid=896203)                      'model_dtype': 'fp32',
+(TaskRunner pid=896203)                      'offload_policy': False,
+(TaskRunner pid=896203)                      'optimizer_offload': False,
+(TaskRunner pid=896203)                      'param_offload': False,
+(TaskRunner pid=896203)                      'qat': {'_target_': 'verl.workers.config.QATEngineConfig',
+(TaskRunner pid=896203)                              'activation_observer': 'static_minmax',
+(TaskRunner pid=896203)                              'enable': False,
+(TaskRunner pid=896203)                              'group_size': 16,
+(TaskRunner pid=896203)                              'ignore_patterns': ['lm_head',
+(TaskRunner pid=896203)                                                  'embed_tokens',
+(TaskRunner pid=896203)                                                  're:.*mlp.gate$'],
+(TaskRunner pid=896203)                              'mode': 'w4a16',
+(TaskRunner pid=896203)                              'quantization_config_path': None},
+(TaskRunner pid=896203)                      'reshard_after_forward': True,
+(TaskRunner pid=896203)                      'seed': 42,
+(TaskRunner pid=896203)                      'strategy': 'fsdp',
+(TaskRunner pid=896203)                      'ulysses_sequence_parallel_size': 1,
+(TaskRunner pid=896203)                      'use_orig_params': False,
+(TaskRunner pid=896203)                      'use_torch_compile': True,
+(TaskRunner pid=896203)                      'wrap_policy': {'min_num_params': 0}},
+(TaskRunner pid=896203)             'grad_clip': 1.0,
+(TaskRunner pid=896203)             'loss_agg_mode': 'token-mean',
+(TaskRunner pid=896203)             'model': {'_target_': 'verl.workers.config.HFModelConfig',
+(TaskRunner pid=896203)                       'custom_chat_template': None,
+(TaskRunner pid=896203)                       'enable_activation_offload': False,
+(TaskRunner pid=896203)                       'enable_gradient_checkpointing': True,
+(TaskRunner pid=896203)                       'exclude_modules': None,
+(TaskRunner pid=896203)                       'external_lib': None,
+(TaskRunner pid=896203)                       'fused_kernel_options': {'impl_backend': 'torch'},
+(TaskRunner pid=896203)                       'hf_config_path': None,
+(TaskRunner pid=896203)                       'lora': {'a2a_experimental': False,
+(TaskRunner pid=896203)                                'adapter_path': None,
+(TaskRunner pid=896203)                                'alpha': 32,
+(TaskRunner pid=896203)                                'dropout': 0.0,
+(TaskRunner pid=896203)                                'dropout_position': 'pre',
+(TaskRunner pid=896203)                                'dtype': None,
+(TaskRunner pid=896203)                                'exclude_modules': [],
+(TaskRunner pid=896203)                                'freeze_language_model': True,
+(TaskRunner pid=896203)                                'freeze_vision_model': True,
+(TaskRunner pid=896203)                                'freeze_vision_projection': True,
+(TaskRunner pid=896203)                                'lora_A_init_method': 'xavier',
+(TaskRunner pid=896203)                                'lora_B_init_method': 'zero',
+(TaskRunner pid=896203)                                'merge': False,
+(TaskRunner pid=896203)                                'rank': 0,
+(TaskRunner pid=896203)                                'target_modules': ['linear_qkv',
+(TaskRunner pid=896203)                                                   'linear_proj',
+(TaskRunner pid=896203)                                                   'linear_fc1',
+(TaskRunner pid=896203)                                                   'linear_fc2'],
+(TaskRunner pid=896203)                                'type': 'lora'},
+(TaskRunner pid=896203)                       'lora_adapter_path': None,
+(TaskRunner pid=896203)                       'lora_alpha': 16,
+(TaskRunner pid=896203)                       'lora_rank': 0,
+(TaskRunner pid=896203)                       'mtp': {'_target_': 'verl.workers.config.MtpConfig',
+(TaskRunner pid=896203)                               'detach_encoder': False,
+(TaskRunner pid=896203)                               'enable': False,
+(TaskRunner pid=896203)                               'enable_rollout': False,
+(TaskRunner pid=896203)                               'enable_train': False,
+(TaskRunner pid=896203)                               'method': 'mtp',
+(TaskRunner pid=896203)                               'mtp_loss_scaling_factor': 0.1,
+(TaskRunner pid=896203)                               'num_speculative_tokens': 1,
+(TaskRunner pid=896203)                               'speculative_algorithm': 'EAGLE',
+(TaskRunner pid=896203)                               'speculative_eagle_topk': 1,
+(TaskRunner pid=896203)                               'speculative_num_draft_tokens': 4,
+(TaskRunner pid=896203)                               'speculative_num_steps': 3},
+(TaskRunner pid=896203)                       'override_config': {},
+(TaskRunner pid=896203)                       'path': '~/models/deepseek-llm-7b-chat',
+(TaskRunner pid=896203)                       'target_modules': 'all-linear',
+(TaskRunner pid=896203)                       'tiled_mlp': {'enabled': False, 'num_shards': 4},
+(TaskRunner pid=896203)                       'tokenizer_path': None,
+(TaskRunner pid=896203)                       'trust_remote_code': False,
+(TaskRunner pid=896203)                       'use_fused_kernels': False,
+(TaskRunner pid=896203)                       'use_liger': False,
+(TaskRunner pid=896203)                       'use_remove_padding': True,
+(TaskRunner pid=896203)                       'use_shm': False},
+(TaskRunner pid=896203)             'optim': {'_target_': 'verl.workers.config.FSDPOptimizerConfig',
+(TaskRunner pid=896203)                       'betas': [0.9, 0.999],
+(TaskRunner pid=896203)                       'clip_grad': 1.0,
+(TaskRunner pid=896203)                       'lr': 1e-05,
+(TaskRunner pid=896203)                       'lr_scheduler_type': 'constant',
+(TaskRunner pid=896203)                       'lr_warmup_steps': -1,
+(TaskRunner pid=896203)                       'lr_warmup_steps_ratio': 0.0,
+(TaskRunner pid=896203)                       'min_lr_ratio': 0.0,
+(TaskRunner pid=896203)                       'num_cycles': 0.5,
+(TaskRunner pid=896203)                       'optimizer': 'AdamW',
+(TaskRunner pid=896203)                       'optimizer_impl': 'torch.optim',
+(TaskRunner pid=896203)                       'override_optimizer_config': None,
+(TaskRunner pid=896203)                       'total_training_steps': -1,
+(TaskRunner pid=896203)                       'warmup_style': None,
+(TaskRunner pid=896203)                       'weight_decay': 0.01,
+(TaskRunner pid=896203)                       'zero_indexed_step': True},
+(TaskRunner pid=896203)             'ppo_epochs': 1,
+(TaskRunner pid=896203)             'ppo_max_token_len_per_gpu': 32768,
+(TaskRunner pid=896203)             'ppo_micro_batch_size': None,
+(TaskRunner pid=896203)             'ppo_micro_batch_size_per_gpu': None,
+(TaskRunner pid=896203)             'ppo_mini_batch_size': 1,
+(TaskRunner pid=896203)             'profiler': {'_target_': 'verl.utils.profiler.ProfilerConfig',
+(TaskRunner pid=896203)                          'all_ranks': False,
+(TaskRunner pid=896203)                          'enable': False,
+(TaskRunner pid=896203)                          'ranks': [],
+(TaskRunner pid=896203)                          'save_path': 'outputs/profile',
+(TaskRunner pid=896203)                          'tool': None,
+(TaskRunner pid=896203)                          'tool_config': {'npu': {'_target_': 'verl.utils.profiler.config.NPUToolConfig',
+(TaskRunner pid=896203)                                                  'analysis': True,
+(TaskRunner pid=896203)                                                  'contents': [],
+(TaskRunner pid=896203)                                                  'discrete': False,
+(TaskRunner pid=896203)                                                  'level': 'level0'},
+(TaskRunner pid=896203)                                          'nsys': {'_target_': 'verl.utils.profiler.config.NsightToolConfig',
+(TaskRunner pid=896203)                                                   'discrete': False},
+(TaskRunner pid=896203)                                          'precision_debugger': {'_target_': 'verl.utils.profiler.config.PrecisionDebuggerToolConfig',
+(TaskRunner pid=896203)                                                                 'config_path': None,
+(TaskRunner pid=896203)                                                                 'stages': None,
+(TaskRunner pid=896203)                                                                 'steps': None,
+(TaskRunner pid=896203)                                                                 'strict': False},
+(TaskRunner pid=896203)                                          'torch': {'_target_': 'verl.utils.profiler.config.TorchProfilerToolConfig',
+(TaskRunner pid=896203)                                                    'contents': [],
+(TaskRunner pid=896203)                                                    'discrete': False},
+(TaskRunner pid=896203)                                          'torch_memory': {'_target_': 'verl.utils.profiler.config.TorchMemoryToolConfig',
+(TaskRunner pid=896203)                                                           'stack_depth': 32,
+(TaskRunner pid=896203)                                                           'trace_alloc_max_entries': 100000}}},
+(TaskRunner pid=896203)             'rollout_n': 2,
+(TaskRunner pid=896203)             'shuffle': False,
+(TaskRunner pid=896203)             'strategy': 'fsdp',
+(TaskRunner pid=896203)             'ulysses_sequence_parallel_size': 1,
+(TaskRunner pid=896203)             'use_dynamic_bsz': True},
+(TaskRunner pid=896203)  'data': {'apply_chat_template_kwargs': {'enable_thinking': True},
+(TaskRunner pid=896203)           'audio_key': 'audios',
+(TaskRunner pid=896203)           'custom_cls': {'name': None, 'path': None},
+(TaskRunner pid=896203)           'dataloader_num_workers': 8,
+(TaskRunner pid=896203)           'filter_overlong_prompts': False,
+(TaskRunner pid=896203)           'filter_overlong_prompts_workers': 1,
+(TaskRunner pid=896203)           'function_tool_path': None,
+(TaskRunner pid=896203)           'image_key': 'images',
+(TaskRunner pid=896203)           'image_patch_size': 14,
+(TaskRunner pid=896203)           'max_prompt_length': 1024,
+(TaskRunner pid=896203)           'max_response_length': 128,
+(TaskRunner pid=896203)           'mm_processor_kwargs': {},
+(TaskRunner pid=896203)           'prompt_key': 'prompt',
+(TaskRunner pid=896203)           'return_full_prompt': False,
+(TaskRunner pid=896203)           'return_multi_modal_inputs': True,
+(TaskRunner pid=896203)           'return_raw_chat': True,
+(TaskRunner pid=896203)           'return_raw_input_ids': False,
+(TaskRunner pid=896203)           'reward_fn_key': 'data_source',
+(TaskRunner pid=896203)           'seed': 1,
+(TaskRunner pid=896203)           'shuffle': True,
+(TaskRunner pid=896203)           'tokenizer': None,
+(TaskRunner pid=896203)           'tool_config_path': None,
+(TaskRunner pid=896203)           'train_batch_size': 1,
+(TaskRunner pid=896203)           'train_files': ['/workspace/storage-shared/nlp/dungdx4/phuc_projects/data/DAPO-math-17.4K/train.parquet'],
+(TaskRunner pid=896203)           'train_max_samples': -1,
+(TaskRunner pid=896203)           'truncation': 'left',
+(TaskRunner pid=896203)           'trust_remote_code': False,
+(TaskRunner pid=896203)           'use_shm': False,
+(TaskRunner pid=896203)           'val_batch_size': None,
+(TaskRunner pid=896203)           'val_files': ['/workspace/storage-shared/nlp/dungdx4/phuc_projects/data/DAPO-math-17.4K/validation.parquet'],
+(TaskRunner pid=896203)           'val_max_samples': -1,
+(TaskRunner pid=896203)           'validation_shuffle': False,
+(TaskRunner pid=896203)           'video_key': 'videos'},
+(TaskRunner pid=896203)  'distillation': {'_target_': 'verl.workers.config.DistillationConfig',
+(TaskRunner pid=896203)                   'distillation_loss': {'_target_': 'verl.workers.config.DistillationLossConfig',
+(TaskRunner pid=896203)                                         'clip_ratio': 0.2,
+(TaskRunner pid=896203)                                         'clip_ratio_high': 0.2,
+(TaskRunner pid=896203)                                         'clip_ratio_low': 0.2,
+(TaskRunner pid=896203)                                         'distillation_loss_coef': 1.0,
+(TaskRunner pid=896203)                                         'log_prob_min_clamp': None,
+(TaskRunner pid=896203)                                         'loss_max_clamp': None,
+(TaskRunner pid=896203)                                         'loss_mode': 'k3',
+(TaskRunner pid=896203)                                         'policy_loss_mode': 'vanilla',
+(TaskRunner pid=896203)                                         'topk': 32,
+(TaskRunner pid=896203)                                         'use_policy_gradient': False,
+(TaskRunner pid=896203)                                         'use_task_rewards': True},
+(TaskRunner pid=896203)                   'enabled': False,
+(TaskRunner pid=896203)                   'n_gpus_per_node': 8,
+(TaskRunner pid=896203)                   'nnodes': 0,
+(TaskRunner pid=896203)                   'teacher_key': 'data_source',
+(TaskRunner pid=896203)                   'teacher_models': {'teacher_model': {'_target_': 'verl.workers.config.DistillationTeacherModelConfig',
+(TaskRunner pid=896203)                                                        'inference': {'_target_': 'verl.workers.config.RolloutConfig',
+(TaskRunner pid=896203)                                                                      'cudagraph_capture_sizes': None,
+(TaskRunner pid=896203)                                                                      'data_parallel_size': 1,
+(TaskRunner pid=896203)                                                                      'disable_log_stats': True,
+(TaskRunner pid=896203)                                                                      'dtype': 'bfloat16',
+(TaskRunner pid=896203)                                                                      'enable_chunked_prefill': True,
+(TaskRunner pid=896203)                                                                      'enable_prefix_caching': True,
+(TaskRunner pid=896203)                                                                      'enforce_eager': True,
+(TaskRunner pid=896203)                                                                      'engine_kwargs': {},
+(TaskRunner pid=896203)                                                                      'expert_parallel_size': 1,
+(TaskRunner pid=896203)                                                                      'free_cache_engine': True,
+(TaskRunner pid=896203)                                                                      'gpu_memory_utilization': 0.5,
+(TaskRunner pid=896203)                                                                      'limit_images': None,
+(TaskRunner pid=896203)                                                                      'load_format': 'auto',
+(TaskRunner pid=896203)                                                                      'max_model_len': None,
+(TaskRunner pid=896203)                                                                      'max_num_batched_tokens': 8192,
+(TaskRunner pid=896203)                                                                      'max_num_seqs': 1024,
+(TaskRunner pid=896203)                                                                      'name': 'sglang',
+(TaskRunner pid=896203)                                                                      'prompt_length': 1024,
+(TaskRunner pid=896203)                                                                      'response_length': 128,
+(TaskRunner pid=896203)                                                                      'skip_tokenizer_init': True,
+(TaskRunner pid=896203)                                                                      'temperature': 1.0,
+(TaskRunner pid=896203)                                                                      'tensor_model_parallel_size': 2},
+(TaskRunner pid=896203)                                                        'key': None,
+(TaskRunner pid=896203)                                                        'model_path': None,
+(TaskRunner pid=896203)                                                        'num_replicas': 0}}},
+(TaskRunner pid=896203)  'global_profiler': {'_target_': 'verl.utils.profiler.ProfilerConfig',
+(TaskRunner pid=896203)                      'global_tool_config': {'nsys': {'_target_': 'verl.utils.profiler.config.NsightToolConfig',
+(TaskRunner pid=896203)                                                      'controller_nsight_options': {'cuda-graph-trace': 'graph',
+(TaskRunner pid=896203)                                                                                    'cuda-memory-usage': 'true',
+(TaskRunner pid=896203)                                                                                    'trace': 'cuda,nvtx,cublas,ucx'},
+(TaskRunner pid=896203)                                                      'discrete': False,
+(TaskRunner pid=896203)                                                      'worker_nsight_options': {'capture-range': 'cudaProfilerApi',
+(TaskRunner pid=896203)                                                                                'capture-range-end': None,
+(TaskRunner pid=896203)                                                                                'cuda-graph-trace': 'graph',
+(TaskRunner pid=896203)                                                                                'cuda-memory-usage': 'true',
+(TaskRunner pid=896203)                                                                                'kill': 'none',
+(TaskRunner pid=896203)                                                                                'trace': 'cuda,nvtx,cublas,ucx'}},
+(TaskRunner pid=896203)                                             'precision_debugger': {'_target_': 'verl.utils.profiler.config.PrecisionDebuggerToolConfig',
+(TaskRunner pid=896203)                                                                    'config_path': None,
+(TaskRunner pid=896203)                                                                    'stages': None,
+(TaskRunner pid=896203)                                                                    'steps': None,
+(TaskRunner pid=896203)                                                                    'strict': False},
+(TaskRunner pid=896203)                                             'torch_memory': {'context': 'all',
+(TaskRunner pid=896203)                                                              'kw_args': {},
+(TaskRunner pid=896203)                                                              'stack_depth': 32,
+(TaskRunner pid=896203)                                                              'stacks': 'all',
+(TaskRunner pid=896203)                                                              'trace_alloc_max_entries': 100000}},
+(TaskRunner pid=896203)                      'profile_continuous_steps': False,
+(TaskRunner pid=896203)                      'save_path': 'outputs/profile',
+(TaskRunner pid=896203)                      'steps': None,
+(TaskRunner pid=896203)                      'tool': None},
+(TaskRunner pid=896203)  'model_engine': 'dp',
+(TaskRunner pid=896203)  'ray_kwargs': {'ray_init': {'num_cpus': None}, 'timeline_json_file': None},
+(TaskRunner pid=896203)  'reward': {'_target_': 'verl.workers.config.RewardConfig',
+(TaskRunner pid=896203)             'custom_reward_function': {'name': 'compute_score',
+(TaskRunner pid=896203)                                        'path': '/workspace/storage-shared/nlp/dungdx4/phuc_projects/My_GrowMTP-main/verl/verl/trainer/mtp/rewards.py'},
+(TaskRunner pid=896203)             'num_workers': 8,
+(TaskRunner pid=896203)             'reward_manager': {'_target_': 'verl.workers.config.reward.RewardManagerConfig',
+(TaskRunner pid=896203)                                'module': {'_target_': 'verl.trainer.config.config.ModuleConfig',
+(TaskRunner pid=896203)                                           'name': 'custom_reward_manager',
+(TaskRunner pid=896203)                                           'path': None},
+(TaskRunner pid=896203)                                'name': 'naive',
+(TaskRunner pid=896203)                                'source': 'register'},
+(TaskRunner pid=896203)             'reward_model': {'_target_': 'verl.workers.config.RewardModelConfig',
+(TaskRunner pid=896203)                              'enable': False,
+(TaskRunner pid=896203)                              'enable_resource_pool': False,
+(TaskRunner pid=896203)                              'model_path': None,
+(TaskRunner pid=896203)                              'n_gpus_per_node': 8,
+(TaskRunner pid=896203)                              'nnodes': 0,
+(TaskRunner pid=896203)                              'rollout': {'_target_': 'verl.workers.config.RolloutConfig',
+(TaskRunner pid=896203)                                          'cudagraph_capture_sizes': None,
+(TaskRunner pid=896203)                                          'data_parallel_size': 1,
+(TaskRunner pid=896203)                                          'disable_log_stats': True,
+(TaskRunner pid=896203)                                          'disaggregation': {'bootstrap_port': None,
+(TaskRunner pid=896203)                                                             'decode_replicas': 1,
+(TaskRunner pid=896203)                                                             'decode_tensor_model_parallel_size': None,
+(TaskRunner pid=896203)                                                             'enabled': False,
+(TaskRunner pid=896203)                                                             'ib_device': None,
+(TaskRunner pid=896203)                                                             'prefill_replicas': 1,
+(TaskRunner pid=896203)                                                             'transfer_backend': 'nixl'},
+(TaskRunner pid=896203)                                          'do_sample': True,
+(TaskRunner pid=896203)                                          'dtype': 'bfloat16',
+(TaskRunner pid=896203)                                          'enable_chunked_prefill': True,
+(TaskRunner pid=896203)                                          'enable_prefix_caching': True,
+(TaskRunner pid=896203)                                          'enforce_eager': True,
+(TaskRunner pid=896203)                                          'engine_kwargs': {},
+(TaskRunner pid=896203)                                          'expert_parallel_size': 1,
+(TaskRunner pid=896203)                                          'free_cache_engine': True,
+(TaskRunner pid=896203)                                          'gpu_memory_utilization': 0.5,
+(TaskRunner pid=896203)                                          'ignore_eos': False,
+(TaskRunner pid=896203)                                          'layered_summon': False,
+(TaskRunner pid=896203)                                          'limit_images': None,
+(TaskRunner pid=896203)                                          'load_format': 'auto',
+(TaskRunner pid=896203)                                          'max_model_len': None,
+(TaskRunner pid=896203)                                          'max_num_batched_tokens': 8192,
+(TaskRunner pid=896203)                                          'max_num_seqs': 1024,
+(TaskRunner pid=896203)                                          'mtp': None,
+(TaskRunner pid=896203)                                          'multi_stage_wake_up': False,
+(TaskRunner pid=896203)                                          'n': 1,
+(TaskRunner pid=896203)                                          'name': '???',
+(TaskRunner pid=896203)                                          'pipeline_model_parallel_size': 1,
+(TaskRunner pid=896203)                                          'prompt_length': 2048,
+(TaskRunner pid=896203)                                          'quantization': None,
+(TaskRunner pid=896203)                                          'quantization_config_file': None,
+(TaskRunner pid=896203)                                          'response_length': 2048,
+(TaskRunner pid=896203)                                          'scheduling_policy': 'fcfs',
+(TaskRunner pid=896203)                                          'skip_tokenizer_init': False,
+(TaskRunner pid=896203)                                          'temperature': 1.0,
+(TaskRunner pid=896203)                                          'tensor_model_parallel_size': 2,
+(TaskRunner pid=896203)                                          'top_k': -1,
+(TaskRunner pid=896203)                                          'top_p': 1}},
+(TaskRunner pid=896203)             'sandbox_fusion': {'_target_': 'verl.workers.config.SandboxFusionConfig',
+(TaskRunner pid=896203)                                'max_concurrent': 64,
+(TaskRunner pid=896203)                                'memory_limit_mb': 1024,
+(TaskRunner pid=896203)                                'url': None}},
+(TaskRunner pid=896203)  'trainer': {'balance_batch': False,
+(TaskRunner pid=896203)              'critic_warmup': 0,
+(TaskRunner pid=896203)              'default_hdfs_dir': None,
+(TaskRunner pid=896203)              'default_local_dir': '/workspace/storage-shared/nlp/dungdx4/phuc_projects/outputs/qwen3-4b-growmtp-dapo-smoke-20260925-115323',
+(TaskRunner pid=896203)              'del_local_ckpt_after_load': False,
+(TaskRunner pid=896203)              'device': 'cuda',
+(TaskRunner pid=896203)              'esi_redundant_time': 0,
+(TaskRunner pid=896203)              'experiment_name': 'growmtp',
+(TaskRunner pid=896203)              'log_val_generations': 0,
+(TaskRunner pid=896203)              'logger': ['console'],
+(TaskRunner pid=896203)              'max_actor_ckpt_to_keep': None,
+(TaskRunner pid=896203)              'max_critic_ckpt_to_keep': None,
+(TaskRunner pid=896203)              'n_gpus_per_node': 1,
+(TaskRunner pid=896203)              'nnodes': 1,
+(TaskRunner pid=896203)              'project_name': 'growmtp',
+(TaskRunner pid=896203)              'ray_wait_register_center_timeout': 300,
+(TaskRunner pid=896203)              'resume_from_path': None,
+(TaskRunner pid=896203)              'resume_mode': 'disable',
+(TaskRunner pid=896203)              'rollout_data_dir': None,
+(TaskRunner pid=896203)              'save_freq': 1,
+(TaskRunner pid=896203)              'test_freq': -1,
+(TaskRunner pid=896203)              'total_epochs': 100,
+(TaskRunner pid=896203)              'total_training_steps': 1,
+(TaskRunner pid=896203)              'val_before_train': False,
+(TaskRunner pid=896203)              'val_only': False,
+(TaskRunner pid=896203)              'validation_data_dir': None},
+(TaskRunner pid=896203)  'transfer_queue': {'backend': {'MooncakeStore': {'auto_init': False,
+(TaskRunner pid=896203)                                                   'device_name': '',
+(TaskRunner pid=896203)                                                   'global_segment_size': 4294967296,
+(TaskRunner pid=896203)                                                   'local_buffer_size': 1073741824,
+(TaskRunner pid=896203)                                                   'local_hostname': 'localhost',
+(TaskRunner pid=896203)                                                   'master_server_address': 'localhost:50124',
+(TaskRunner pid=896203)                                                   'metadata_server': 'localhost:50123',
+(TaskRunner pid=896203)                                                   'protocol': 'tcp'},
+(TaskRunner pid=896203)                                 'SimpleStorage': {'num_data_storage_units': 8,
+(TaskRunner pid=896203)                                                   'total_storage_size': 100000},
+(TaskRunner pid=896203)                                 'storage_backend': 'SimpleStorage'},
+(TaskRunner pid=896203)                     'enable': False,
+(TaskRunner pid=896203)                     'metrics': {'enabled': False, 'port': 0}}}
+(TaskRunner pid=896203) /workspace/storage-shared/nlp/dungdx4/phuc_projects/My_GrowMTP-main/verl/verl/trainer/main_ppo.py:258: UserWarning: Disabled critic as algorithm.adv_estimator != gae. If it is not intended, please set critic.enable=True
+(TaskRunner pid=896203)   use_critic=need_critic(config),
+(TaskRunner pid=896203) [validate_config] All configuration checks passed successfully!
+(TaskRunner pid=896203) Using dataset class: RLHFDataset
+(TaskRunner pid=896203) dataset len: 16398
+(TaskRunner pid=896203) Using dataset class: RLHFDataset
+(TaskRunner pid=896203) dataset len: 1000
+(TaskRunner pid=896203) /workspace/storage-shared/nlp/dungdx4/phuc_projects/My_GrowMTP-main/verl/verl/trainer/main_ppo.py:299: FutureWarning: Warning: Class 'verl.trainer.ppo.ray_trainer.RayPPOTrainer' is deprecated. Please use 'main_ppo.py is deprecated, and wil be replaced by main_ppo_sync.py in v0.8.0, please use main_ppo_sync.py instead.' instead.
+(TaskRunner pid=896203)   trainer = RayPPOTrainer(
+(TaskRunner pid=896203) /workspace/storage-shared/nlp/dungdx4/phuc_projects/My_GrowMTP-main/verl/verl/trainer/ppo/ray_trainer.py:348: UserWarning: Disabled critic as algorithm.adv_estimator != gae. If it is not intended, please set critic.enable=True
+(TaskRunner pid=896203)   self.use_critic = need_critic(self.config)
+(TaskRunner pid=896203) Size of train dataloader: 16398, Size of val dataloader: 1
+(TaskRunner pid=896203) Total training steps: 1
+(TaskRunner pid=896203) colocated worker base class <class 'verl.single_controller.base.worker.Worker'>
+(TaskRunner pid=896203) /workspace/storage-shared/nlp/dungdx4/phuc_projects/phucvenv/lib/python3.12/site-packages/torchdata/stateful_dataloader/stateful_dataloader.py:379: UserWarning: 'set_vital' is deprecated, please do not call
+(TaskRunner pid=896203)   torch.set_vital("Dataloader", "enabled", "True")  # type: ignore[attr-defined]
+(pid=898533) W0925 12:00:56.812000 898533 torch/utils/_pytree.py:630] <enum 'KernelPreference'> is an Enum subclass and is now natively supported by torch.compile as an opaque value type. Calling register_constant() on Enum subclasses is deprecated and will be an error in a future release.
+(pid=898533) W0925 12:00:56.859000 898533 torch/utils/_pytree.py:630] <enum 'ScaleCalculationMode'> is an Enum subclass and is now natively supported by torch.compile as an opaque value type. Calling register_constant() on Enum subclasses is deprecated and will be an error in a future release.
+(WorkerDict pid=898533) /workspace/storage-shared/nlp/dungdx4/phuc_projects/My_GrowMTP-main/verl/verl/workers/engine/mindspeed/transformer_impl.py:24: UserWarning: NPU not support router replay for now.
+(WorkerDict pid=898533)   from verl.utils.megatron.router_replay_patch import RouterReplay
+Loading weights:   0%|          | 0/398 [00:00<?, ?it/s]
+Loading weights:   0%|          | 1/398 [00:00<05:52,  1.13it/s]
+Loading weights:  34%|███▍      | 135/398 [00:00<00:01, 184.75it/s]
+Loading weights:  52%|█████▏    | 208/398 [00:01<00:01, 124.55it/s]
+Loading weights:  63%|██████▎   | 252/398 [00:02<00:01, 135.13it/s]
+Loading weights:  72%|███████▏  | 286/398 [00:02<00:00, 143.45it/s]
+Loading weights:  79%|███████▉  | 314/398 [00:02<00:00, 144.75it/s]
+Loading weights:  85%|████████▍ | 338/398 [00:02<00:00, 153.77it/s]
+Loading weights:  91%|█████████ | 361/398 [00:02<00:00, 160.35it/s]
+Loading weights: 100%|██████████| 398/398 [00:02<00:00, 138.51it/s]
+(WorkerDict pid=898533) Monkey patch _flash_attention_forward in transformers.integrations.flash_attention
+(WorkerDict pid=898533) Using Triton backend for fused kernels in Qwen3ForCausalLM
+(WorkerDict pid=898533) [transformers] Qwen3ForCausalLM LOAD REPORT from: /workspace/storage-shared/nlp/dungdx4/phuc_projects/models/Qwen3-4B-growmtp-dapo-smoke-20260925-115323
+(WorkerDict pid=898533) Key                                          | Status     |  |
+(WorkerDict pid=898533) ---------------------------------------------+------------+--+-
+(WorkerDict pid=898533) mtp.layers.0.mlp.down_proj.weight            | UNEXPECTED |  |
+(WorkerDict pid=898533) mtp.layers.0.mlp.up_proj.weight              | UNEXPECTED |  |
+(WorkerDict pid=898533) mtp.layers.0.self_attn.k_proj.weight         | UNEXPECTED |  |
+(WorkerDict pid=898533) mtp.norm.weight                              | UNEXPECTED |  |
+(WorkerDict pid=898533) mtp.pre_fc_norm_embedding.weight             | UNEXPECTED |  |
+(WorkerDict pid=898533) mtp.layers.0.post_attention_layernorm.weight | UNEXPECTED |  |
+(WorkerDict pid=898533) mtp.layers.0.input_layernorm.weight          | UNEXPECTED |  |
+(WorkerDict pid=898533) mtp.fc.weight                                | UNEXPECTED |  |
+(WorkerDict pid=898533) mtp.pre_fc_norm_hidden.weight                | UNEXPECTED |  |
+(WorkerDict pid=898533) mtp.layers.0.self_attn.v_proj.weight         | UNEXPECTED |  |
+(WorkerDict pid=898533) mtp.layers.0.self_attn.q_proj.weight         | UNEXPECTED |  |
+(WorkerDict pid=898533) mtp.layers.0.mlp.gate_proj.weight            | UNEXPECTED |  |
+(WorkerDict pid=898533) mtp.layers.0.self_attn.k_norm.weight         | UNEXPECTED |  |
+(WorkerDict pid=898533) mtp.layers.0.self_attn.o_proj.weight         | UNEXPECTED |  |
+(WorkerDict pid=898533) mtp.layers.0.self_attn.q_norm.weight         | UNEXPECTED |  |
+(WorkerDict pid=898533)
+(WorkerDict pid=898533) Notes:
+(WorkerDict pid=898533) - UNEXPECTED:   can be ignored when loading from different task/architecture; not ok if you expect identical arch.
+(WorkerDict pid=898533) PeftModelForCausalLM contains 4.14B parameters
+(WorkerDict pid=898533) Before FSDP, memory allocated (GB): 0.00, memory reserved (GB): 0.00, device memory used/total (GB): 100.17/178.35
+(WorkerDict pid=898533) NCCL version 2.29.7+cuda13.2
+(WorkerDict pid=898533) After FSDP, memory allocated (GB): 15.54, memory reserved (GB): 17.42, device memory used/total (GB): 118.23/178.35
+(WorkerDict pid=898533) Total steps: 1, num_warmup_steps: 0
+(pid=902720) W0925 12:02:22.504000 902720 torch/utils/_pytree.py:630] <enum 'KernelPreference'> is an Enum subclass and is now natively supported by torch.compile as an opaque value type. Calling register_constant() on Enum subclasses is deprecated and will be an error in a future release.
+(pid=902720) W0925 12:02:22.547000 902720 torch/utils/_pytree.py:630] <enum 'ScaleCalculationMode'> is an Enum subclass and is now natively supported by torch.compile as an opaque value type. Calling register_constant() on Enum subclasses is deprecated and will be an error in a future release.
+(pid=903348) W0925 12:02:29.246000 903348 torch/utils/_pytree.py:630] <enum 'KernelPreference'> is an Enum subclass and is now natively supported by torch.compile as an opaque value type. Calling register_constant() on Enum subclasses is deprecated and will be an error in a future release. [repeated 8x across cluster] (Ray deduplicates logs by default. Set RAY_DEDUP_LOGS=0 to disable log deduplication, or see https://docs.ray.io/en/master/ray-observability/user-guides/configure-logging.html#log-deduplication for more options.)
+(pid=902718) W0925 12:02:23.593000 902718 torch/utils/_pytree.py:630] <enum 'ScaleCalculationMode'> is an Enum subclass and is now natively supported by torch.compile as an opaque value type. Calling register_constant() on Enum subclasses is deprecated and will be an error in a future release. [repeated 7x across cluster]
+(SGLangHttpServer pid=903348) SGLang http server: rollout_mode=<RolloutMode.HYBRID: 'hybrid'>, replica_rank=0, node_rank=0, nnodes=1, cuda_visible_devices='0', role=null
+(SGLangHttpServer pid=903348) WARNING:2026-09-25 12:02:41,739:agent loop only support torch and npu profiler, got None
+(SGLangHttpServer pid=903348) INFO:2026-09-25 12:02:41,767:Using SGLang attention backend flashinfer for CUDA compute capability (10, 0)
+(SGLangHttpServer pid=903348) WARNING:2026-09-25 12:02:41,794:Spec v1 is used for eagle/eagle3/standalone speculative decoding because overlap schedule is disabled.
+(pid=903348) W0925 12:02:29.294000 903348 torch/utils/_pytree.py:630] <enum 'ScaleCalculationMode'> is an Enum subclass and is now natively supported by torch.compile as an opaque value type. Calling register_constant() on Enum subclasses is deprecated and will be an error in a future release.
+(SGLangHttpServer pid=903348) W0925 12:02:55.084000 904790 torch/utils/_pytree.py:630] <enum 'KernelPreference'> is an Enum subclass and is now natively supported by torch.compile as an opaque value type. Calling register_constant() on Enum subclasses is deprecated and will be an error in a future release.
+(SGLangHttpServer pid=903348) W0925 12:02:55.346000 904790 torch/utils/_pytree.py:630] <enum 'ScaleCalculationMode'> is an Enum subclass and is now natively supported by torch.compile as an opaque value type. Calling register_constant() on Enum subclasses is deprecated and will be an error in a future release.
+(SGLangHttpServer pid=903348) W0925 12:02:55.464000 904799 torch/utils/_pytree.py:630] <enum 'KernelPreference'> is an Enum subclass and is now natively supported by torch.compile as an opaque value type. Calling register_constant() on Enum subclasses is deprecated and will be an error in a future release.
+(SGLangHttpServer pid=903348) W0925 12:02:55.710000 904799 torch/utils/_pytree.py:630] <enum 'ScaleCalculationMode'> is an Enum subclass and is now natively supported by torch.compile as an opaque value type. Calling register_constant() on Enum subclasses is deprecated and will be an error in a future release.
+(SGLangHttpServer pid=903348) [W925 12:03:03.991770962 ProcessGroupNCCL.cpp:973] Warning: TORCH_NCCL_AVOID_RECORD_STREAMS is the default now, this environment variable is thus deprecated. (function operator())
+Capturing batches (bs=72 avail_mem=23.47 GB):   0%|          | 0/28 [00:00<?, ?it/s]
+Capturing batches (bs=64 avail_mem=23.26 GB):   4%|▎         | 1/28 [00:06<03:06,  6.91s/it]
+Capturing batches (bs=60 avail_mem=23.26 GB):   7%|▋         | 2/28 [00:07<01:18,  3.01s/it]
+Capturing batches (bs=56 avail_mem=23.24 GB):  11%|█         | 3/28 [00:07<00:43,  1.72s/it]
+Capturing batches (bs=52 avail_mem=23.24 GB):  14%|█▍        | 4/28 [00:07<00:26,  1.09s/it]
+Capturing batches (bs=48 avail_mem=23.21 GB):  18%|█▊        | 5/28 [00:07<00:16,  1.36it/s]
+Capturing batches (bs=44 avail_mem=23.21 GB):  21%|██▏       | 6/28 [00:07<00:11,  1.90it/s]
+Capturing batches (bs=40 avail_mem=23.19 GB):  25%|██▌       | 7/28 [00:07<00:08,  2.54it/s]
+Capturing batches (bs=32 avail_mem=23.19 GB):  29%|██▊       | 8/28 [00:07<00:06,  3.23it/s]
+Capturing batches (bs=30 avail_mem=23.16 GB):  29%|██▊       | 8/28 [00:08<00:06,  3.23it/s]
+Capturing batches (bs=28 avail_mem=23.16 GB):  36%|███▌      | 10/28 [00:08<00:04,  4.39it/s]
+Capturing batches (bs=26 avail_mem=23.14 GB):  39%|███▉      | 11/28 [00:08<00:03,  4.52it/s]
+Capturing batches (bs=24 avail_mem=23.14 GB):  39%|███▉      | 11/28 [00:08<00:03,  4.52it/s]
+Capturing batches (bs=22 avail_mem=23.11 GB):  46%|████▋     | 13/28 [00:08<00:02,  5.69it/s]
+Capturing batches (bs=20 avail_mem=23.11 GB):  50%|█████     | 14/28 [00:08<00:02,  5.91it/s]
+Capturing batches (bs=18 avail_mem=23.09 GB):  54%|█████▎    | 15/28 [00:09<00:02,  5.81it/s]
+Capturing batches (bs=16 avail_mem=23.08 GB):  57%|█████▋    | 16/28 [00:09<00:01,  6.19it/s]
+Capturing batches (bs=14 avail_mem=23.06 GB):  57%|█████▋    | 16/28 [00:09<00:01,  6.19it/s]
+Capturing batches (bs=12 avail_mem=23.06 GB):  64%|██████▍   | 18/28 [00:09<00:01,  6.74it/s]
+Capturing batches (bs=10 avail_mem=23.04 GB):  68%|██████▊   | 19/28 [00:09<00:01,  6.09it/s]
+Capturing batches (bs=8 avail_mem=23.04 GB):  71%|███████▏  | 20/28 [00:09<00:01,  6.01it/s]
+Capturing batches (bs=7 avail_mem=23.02 GB):  75%|███████▌  | 21/28 [00:09<00:01,  6.61it/s]
+Capturing batches (bs=6 avail_mem=23.01 GB):  79%|███████▊  | 22/28 [00:10<00:00,  6.77it/s]
+Capturing batches (bs=5 avail_mem=22.99 GB):  82%|████████▏ | 23/28 [00:10<00:00,  7.36it/s]
+Capturing batches (bs=4 avail_mem=22.99 GB):  86%|████████▌ | 24/28 [00:10<00:00,  7.04it/s]
+Capturing batches (bs=3 avail_mem=22.97 GB):  89%|████████▉ | 25/28 [00:10<00:00,  7.12it/s]
+Capturing batches (bs=2 avail_mem=22.97 GB):  93%|█████████▎| 26/28 [00:10<00:00,  7.70it/s]
+Capturing batches (bs=1 avail_mem=22.95 GB):  96%|█████████▋| 27/28 [00:10<00:00,  6.64it/s]
+Capturing batches (bs=1 avail_mem=22.95 GB): 100%|██████████| 28/28 [00:10<00:00,  2.58it/s]
+Compiling num tokens (num_tokens=16384):   0%|          | 0/74 [00:00<?, ?it/s]
+Compiling num tokens (num_tokens=15872):   1%|▏         | 1/74 [00:11<14:26, 11.87s/it]
+Compiling num tokens (num_tokens=15360):   3%|▎         | 2/74 [00:13<06:43,  5.60s/it]
+Compiling num tokens (num_tokens=14848):   4%|▍         | 3/74 [00:14<04:11,  3.54s/it]
+Compiling num tokens (num_tokens=14336):   5%|▌         | 4/74 [00:15<02:59,  2.57s/it]
+Compiling num tokens (num_tokens=13824):   7%|▋         | 5/74 [00:16<02:16,  1.97s/it]
+Compiling num tokens (num_tokens=13312):   8%|▊         | 6/74 [00:17<01:51,  1.64s/it]
+Compiling num tokens (num_tokens=12800):   9%|▉         | 7/74 [00:18<01:33,  1.40s/it]
+Compiling num tokens (num_tokens=12288):  11%|█         | 8/74 [00:18<01:18,  1.18s/it]
+Compiling num tokens (num_tokens=11776):  12%|█▏        | 9/74 [00:19<01:09,  1.07s/it]
+Compiling num tokens (num_tokens=11264):  14%|█▎        | 10/74 [00:20<01:02,  1.03it/s]
+Compiling num tokens (num_tokens=10752):  15%|█▍        | 11/74 [00:20<00:54,  1.16it/s]
+Compiling num tokens (num_tokens=10240):  16%|█▌        | 12/74 [00:21<00:48,  1.27it/s]
+Compiling num tokens (num_tokens=9728):  18%|█▊        | 13/74 [00:22<00:45,  1.34it/s]
+Compiling num tokens (num_tokens=9216):  19%|█▉        | 14/74 [00:22<00:41,  1.46it/s]
+Compiling num tokens (num_tokens=8704):  20%|██        | 15/74 [00:23<00:36,  1.62it/s]
+Compiling num tokens (num_tokens=8192):  22%|██▏       | 16/74 [00:23<00:31,  1.82it/s]
+Compiling num tokens (num_tokens=7680):  23%|██▎       | 17/74 [00:24<00:29,  1.92it/s]
+Compiling num tokens (num_tokens=7168):  24%|██▍       | 18/74 [00:24<00:27,  2.03it/s]
+Compiling num tokens (num_tokens=6656):  26%|██▌       | 19/74 [00:24<00:25,  2.19it/s]
+Compiling num tokens (num_tokens=6144):  27%|██▋       | 20/74 [00:25<00:22,  2.43it/s]
+Compiling num tokens (num_tokens=5632):  28%|██▊       | 21/74 [00:25<00:19,  2.71it/s]
+Compiling num tokens (num_tokens=5120):  30%|██▉       | 22/74 [00:25<00:17,  2.99it/s]
+Compiling num tokens (num_tokens=4608):  31%|███       | 23/74 [00:25<00:14,  3.46it/s]
+Compiling num tokens (num_tokens=4096):  32%|███▏      | 24/74 [00:26<00:13,  3.68it/s]
+Compiling num tokens (num_tokens=3840):  34%|███▍      | 25/74 [00:26<00:11,  4.10it/s]
+Compiling num tokens (num_tokens=3584):  35%|███▌      | 26/74 [00:26<00:10,  4.50it/s]
+Compiling num tokens (num_tokens=3328):  36%|███▋      | 27/74 [00:26<00:09,  5.15it/s]
+Compiling num tokens (num_tokens=3072):  38%|███▊      | 28/74 [00:26<00:08,  5.43it/s]
+Compiling num tokens (num_tokens=2816):  39%|███▉      | 29/74 [00:26<00:07,  6.06it/s]
+Compiling num tokens (num_tokens=2560):  41%|████      | 30/74 [00:26<00:06,  6.77it/s]
+Compiling num tokens (num_tokens=2304):  42%|████▏     | 31/74 [00:27<00:05,  7.29it/s]
+Compiling num tokens (num_tokens=1792):  45%|████▍     | 33/74 [00:27<00:04,  9.38it/s]
+Compiling num tokens (num_tokens=1280):  47%|████▋     | 35/74 [00:27<00:03, 10.86it/s]
+Compiling num tokens (num_tokens=960):  50%|█████     | 37/74 [00:27<00:02, 12.69it/s]
+Compiling num tokens (num_tokens=896):  50%|█████     | 37/74 [00:27<00:02, 12.69it/s]
+Compiling num tokens (num_tokens=704):  55%|█████▌    | 41/74 [00:27<00:01, 19.07it/s]
+Compiling num tokens (num_tokens=512):  59%|█████▉    | 44/74 [00:27<00:01, 20.10it/s]
+Compiling num tokens (num_tokens=384):  65%|██████▍   | 48/74 [00:27<00:01, 25.10it/s]
+Compiling num tokens (num_tokens=320):  65%|██████▍   | 48/74 [00:27<00:01, 25.10it/s]
+Compiling num tokens (num_tokens=288):  69%|██████▉   | 51/74 [00:27<00:00, 24.88it/s]
+Compiling num tokens (num_tokens=240):  69%|██████▉   | 51/74 [00:28<00:00, 24.88it/s]
+Compiling num tokens (num_tokens=176):  73%|███████▎  | 54/74 [00:28<00:00, 24.34it/s]
+Compiling num tokens (num_tokens=128):  78%|███████▊  | 58/74 [00:28<00:00, 27.09it/s]
+Compiling num tokens (num_tokens=80):  82%|████████▏ | 61/74 [00:28<00:00, 26.16it/s]
+Compiling num tokens (num_tokens=32):  88%|████████▊ | 65/74 [00:28<00:00, 28.52it/s]
+Compiling num tokens (num_tokens=20):  92%|█████████▏| 68/74 [00:28<00:00, 28.03it/s]
+Compiling num tokens (num_tokens=4):  96%|█████████▌| 71/74 [00:28<00:00, 27.38it/s]
+Compiling num tokens (num_tokens=4): 100%|██████████| 74/74 [00:28<00:00,  2.58it/s]
+Capturing num tokens (num_tokens=16384 avail_mem=21.33 GB):   0%|          | 0/74 [00:00<?, ?it/s]
+Capturing num tokens (num_tokens=15872 avail_mem=21.00 GB):   1%|▏         | 1/74 [00:02<02:52,  2.36s/it]
+Capturing num tokens (num_tokens=15360 avail_mem=21.00 GB):   3%|▎         | 2/74 [00:04<02:39,  2.21s/it]
+Capturing num tokens (num_tokens=14848 avail_mem=21.01 GB):   4%|▍         | 3/74 [00:06<02:36,  2.20s/it]
+Capturing num tokens (num_tokens=14336 avail_mem=21.01 GB):   5%|▌         | 4/74 [00:08<02:25,  2.07s/it]
+Capturing num tokens (num_tokens=13824 avail_mem=21.01 GB):   7%|▋         | 5/74 [00:10<02:16,  1.98s/it]
+Capturing num tokens (num_tokens=13312 avail_mem=21.02 GB):   8%|▊         | 6/74 [00:12<02:07,  1.87s/it]
+Capturing num tokens (num_tokens=12800 avail_mem=21.02 GB):   9%|▉         | 7/74 [00:13<01:57,  1.76s/it]
+Capturing num tokens (num_tokens=12288 avail_mem=21.02 GB):  11%|█         | 8/74 [00:14<01:48,  1.65s/it]
+Capturing num tokens (num_tokens=11776 avail_mem=21.03 GB):  12%|█▏        | 9/74 [00:16<01:46,  1.64s/it]
+Capturing num tokens (num_tokens=11264 avail_mem=21.03 GB):  14%|█▎        | 10/74 [00:18<01:42,  1.60s/it]
+Capturing num tokens (num_tokens=10752 avail_mem=21.03 GB):  15%|█▍        | 11/74 [00:19<01:38,  1.57s/it]
+Capturing num tokens (num_tokens=10240 avail_mem=21.03 GB):  16%|█▌        | 12/74 [00:21<01:35,  1.54s/it]
+Capturing num tokens (num_tokens=9728 avail_mem=21.04 GB):  18%|█▊        | 13/74 [00:22<01:27,  1.43s/it]
+Capturing num tokens (num_tokens=9216 avail_mem=21.04 GB):  19%|█▉        | 14/74 [00:23<01:20,  1.34s/it]
+Capturing num tokens (num_tokens=8704 avail_mem=21.05 GB):  20%|██        | 15/74 [00:24<01:11,  1.22s/it]
+Capturing num tokens (num_tokens=8192 avail_mem=21.05 GB):  22%|██▏       | 16/74 [00:25<01:03,  1.10s/it]
+Capturing num tokens (num_tokens=7680 avail_mem=21.05 GB):  23%|██▎       | 17/74 [00:25<00:58,  1.02s/it]
+Capturing num tokens (num_tokens=7168 avail_mem=21.05 GB):  24%|██▍       | 18/74 [00:26<00:54,  1.03it/s]
+Capturing num tokens (num_tokens=6656 avail_mem=21.06 GB):  26%|██▌       | 19/74 [00:27<00:52,  1.05it/s]
+Capturing num tokens (num_tokens=6144 avail_mem=21.06 GB):  27%|██▋       | 20/74 [00:28<00:46,  1.17it/s]
+Capturing num tokens (num_tokens=5632 avail_mem=21.06 GB):  28%|██▊       | 21/74 [00:29<00:42,  1.24it/s]
+Capturing num tokens (num_tokens=5120 avail_mem=21.07 GB):  30%|██▉       | 22/74 [00:29<00:37,  1.39it/s]
+Capturing num tokens (num_tokens=4608 avail_mem=21.07 GB):  31%|███       | 23/74 [00:30<00:34,  1.46it/s]
+Capturing num tokens (num_tokens=4096 avail_mem=21.07 GB):  32%|███▏      | 24/74 [00:30<00:30,  1.62it/s]
+Capturing num tokens (num_tokens=3840 avail_mem=21.07 GB):  34%|███▍      | 25/74 [00:31<00:26,  1.83it/s]
+Capturing num tokens (num_tokens=3584 avail_mem=21.07 GB):  35%|███▌      | 26/74 [00:31<00:26,  1.81it/s]
+Capturing num tokens (num_tokens=3328 avail_mem=21.07 GB):  36%|███▋      | 27/74 [00:32<00:24,  1.94it/s]
+Capturing num tokens (num_tokens=3072 avail_mem=21.07 GB):  38%|███▊      | 28/74 [00:32<00:22,  2.05it/s]
+Capturing num tokens (num_tokens=2816 avail_mem=21.07 GB):  39%|███▉      | 29/74 [00:32<00:20,  2.16it/s]
+Capturing num tokens (num_tokens=2560 avail_mem=21.07 GB):  41%|████      | 30/74 [00:33<00:17,  2.45it/s]
+Capturing num tokens (num_tokens=2304 avail_mem=21.07 GB):  42%|████▏     | 31/74 [00:33<00:16,  2.61it/s]
+Capturing num tokens (num_tokens=2048 avail_mem=21.07 GB):  43%|████▎     | 32/74 [00:33<00:16,  2.60it/s]
+Capturing num tokens (num_tokens=1792 avail_mem=21.07 GB):  45%|████▍     | 33/74 [00:34<00:13,  2.96it/s]
+Capturing num tokens (num_tokens=1536 avail_mem=21.07 GB):  46%|████▌     | 34/74 [00:34<00:11,  3.53it/s]
+Capturing num tokens (num_tokens=1280 avail_mem=21.06 GB):  47%|████▋     | 35/74 [00:34<00:10,  3.60it/s]
+Capturing num tokens (num_tokens=1024 avail_mem=21.06 GB):  49%|████▊     | 36/74 [00:34<00:10,  3.56it/s]
+Capturing num tokens (num_tokens=960 avail_mem=21.06 GB):  50%|█████     | 37/74 [00:35<00:10,  3.63it/s]
+Capturing num tokens (num_tokens=896 avail_mem=21.05 GB):  51%|█████▏    | 38/74 [00:35<00:10,  3.60it/s]
+Capturing num tokens (num_tokens=896 avail_mem=21.05 GB):  53%|█████▎    | 39/74 [00:35<00:09,  3.65it/s]
+Capturing num tokens (num_tokens=832 avail_mem=21.05 GB):  53%|█████▎    | 39/74 [00:35<00:09,  3.65it/s]
+Capturing num tokens (num_tokens=768 avail_mem=21.04 GB):  54%|█████▍    | 40/74 [00:35<00:09,  3.64it/s]
+Capturing num tokens (num_tokens=704 avail_mem=21.03 GB):  55%|█████▌    | 41/74 [00:36<00:09,  3.48it/s]
+Capturing num tokens (num_tokens=640 avail_mem=21.03 GB):  57%|█████▋    | 42/74 [00:36<00:09,  3.50it/s]
+Capturing num tokens (num_tokens=576 avail_mem=21.03 GB):  58%|█████▊    | 43/74 [00:36<00:08,  3.71it/s]
+Capturing num tokens (num_tokens=512 avail_mem=21.02 GB):  59%|█████▉    | 44/74 [00:36<00:07,  3.91it/s]
+Capturing num tokens (num_tokens=480 avail_mem=21.02 GB):  61%|██████    | 45/74 [00:37<00:07,  3.99it/s]
+Capturing num tokens (num_tokens=448 avail_mem=21.01 GB):  62%|██████▏   | 46/74 [00:37<00:07,  3.63it/s]
+Capturing num tokens (num_tokens=416 avail_mem=21.01 GB):  64%|██████▎   | 47/74 [00:37<00:07,  3.81it/s]
+Capturing num tokens (num_tokens=384 avail_mem=21.00 GB):  65%|██████▍   | 48/74 [00:37<00:06,  4.17it/s]
+Capturing num tokens (num_tokens=352 avail_mem=20.99 GB):  66%|██████▌   | 49/74 [00:38<00:05,  4.24it/s]
+Capturing num tokens (num_tokens=320 avail_mem=20.99 GB):  68%|██████▊   | 50/74 [00:38<00:05,  4.25it/s]
+Capturing num tokens (num_tokens=288 avail_mem=20.99 GB):  69%|██████▉   | 51/74 [00:38<00:06,  3.78it/s]
+Capturing num tokens (num_tokens=256 avail_mem=20.99 GB):  70%|███████   | 52/74 [00:38<00:05,  4.07it/s]
+Capturing num tokens (num_tokens=240 avail_mem=20.99 GB):  72%|███████▏  | 53/74 [00:39<00:04,  4.24it/s]
+Capturing num tokens (num_tokens=240 avail_mem=20.99 GB):  73%|███████▎  | 54/74 [00:39<00:04,  4.22it/s]
+Capturing num tokens (num_tokens=224 avail_mem=20.98 GB):  73%|███████▎  | 54/74 [00:39<00:04,  4.22it/s]
+Capturing num tokens (num_tokens=208 avail_mem=20.98 GB):  74%|███████▍  | 55/74 [00:39<00:04,  4.55it/s]
+Capturing num tokens (num_tokens=192 avail_mem=20.97 GB):  76%|███████▌  | 56/74 [00:39<00:03,  4.56it/s]
+Capturing num tokens (num_tokens=176 avail_mem=20.96 GB):  77%|███████▋  | 57/74 [00:40<00:03,  4.33it/s]
+Capturing num tokens (num_tokens=160 avail_mem=20.96 GB):  78%|███████▊  | 58/74 [00:40<00:03,  4.32it/s]
+Capturing num tokens (num_tokens=144 avail_mem=20.96 GB):  80%|███████▉  | 59/74 [00:40<00:02,  5.19it/s]
+Capturing num tokens (num_tokens=128 avail_mem=20.95 GB):  81%|████████  | 60/74 [00:40<00:02,  4.99it/s]
+Capturing num tokens (num_tokens=112 avail_mem=20.95 GB):  82%|████████▏ | 61/74 [00:40<00:02,  5.38it/s]
+Capturing num tokens (num_tokens=96 avail_mem=20.95 GB):  84%|████████▍ | 62/74 [00:40<00:02,  4.95it/s]
+Capturing num tokens (num_tokens=80 avail_mem=20.94 GB):  85%|████████▌ | 63/74 [00:41<00:02,  4.72it/s]
+Capturing num tokens (num_tokens=64 avail_mem=20.94 GB):  86%|████████▋ | 64/74 [00:41<00:02,  4.55it/s]
+Capturing num tokens (num_tokens=48 avail_mem=20.93 GB):  88%|████████▊ | 65/74 [00:41<00:01,  5.32it/s]
+Capturing num tokens (num_tokens=32 avail_mem=20.93 GB):  89%|████████▉ | 66/74 [00:41<00:01,  4.56it/s]
+Capturing num tokens (num_tokens=28 avail_mem=20.92 GB):  91%|█████████ | 67/74 [00:42<00:01,  4.26it/s]
+Capturing num tokens (num_tokens=24 avail_mem=20.92 GB):  92%|█████████▏| 68/74 [00:42<00:01,  3.95it/s]
+Capturing num tokens (num_tokens=20 avail_mem=20.91 GB):  93%|█████████▎| 69/74 [00:42<00:01,  4.30it/s]
+Capturing num tokens (num_tokens=16 avail_mem=20.91 GB):  95%|█████████▍| 70/74 [00:42<00:00,  4.47it/s]
+Capturing num tokens (num_tokens=12 avail_mem=20.90 GB):  96%|█████████▌| 71/74 [00:43<00:00,  4.39it/s]
+Capturing num tokens (num_tokens=8 avail_mem=20.90 GB):  97%|█████████▋| 72/74 [00:43<00:00,  4.79it/s]
+Capturing num tokens (num_tokens=4 avail_mem=20.89 GB):  99%|█████████▊| 73/74 [00:43<00:00,  4.65it/s]
+Capturing num tokens (num_tokens=4 avail_mem=20.89 GB): 100%|██████████| 74/74 [00:43<00:00,  1.69it/s]
+Capturing batches (bs=72 avail_mem=18.70 GB):   0%|          | 0/28 [00:00<?, ?it/s]
+Capturing batches (bs=64 avail_mem=17.72 GB):   4%|▎         | 1/28 [00:24<11:08, 24.76s/it]
+Capturing batches (bs=60 avail_mem=17.54 GB):   7%|▋         | 2/28 [00:25<04:28, 10.34s/it]
+Capturing batches (bs=56 avail_mem=17.55 GB):  11%|█         | 3/28 [00:25<02:21,  5.67s/it]
+Capturing batches (bs=52 avail_mem=17.56 GB):  14%|█▍        | 4/28 [00:25<01:23,  3.50s/it]
+Capturing batches (bs=48 avail_mem=17.57 GB):  18%|█▊        | 5/28 [00:25<00:52,  2.30s/it]
+Capturing batches (bs=44 avail_mem=17.58 GB):  21%|██▏       | 6/28 [00:25<00:34,  1.56s/it]
+Capturing batches (bs=40 avail_mem=17.59 GB):  25%|██▌       | 7/28 [00:25<00:23,  1.11s/it]
+Capturing batches (bs=32 avail_mem=17.48 GB):  29%|██▊       | 8/28 [00:26<00:16,  1.18it/s]
+Capturing batches (bs=32 avail_mem=17.48 GB):  32%|███▏      | 9/28 [00:26<00:12,  1.56it/s]
+Capturing batches (bs=30 avail_mem=17.50 GB):  32%|███▏      | 9/28 [00:26<00:12,  1.56it/s]
+Capturing batches (bs=28 avail_mem=17.50 GB):  36%|███▌      | 10/28 [00:26<00:08,  2.03it/s]
+Capturing batches (bs=26 avail_mem=17.51 GB):  39%|███▉      | 11/28 [00:26<00:06,  2.60it/s]
+Capturing batches (bs=24 avail_mem=17.43 GB):  43%|████▎     | 12/28 [00:26<00:05,  3.18it/s]
+Capturing batches (bs=22 avail_mem=17.44 GB):  46%|████▋     | 13/28 [00:26<00:03,  3.90it/s]
+Capturing batches (bs=20 avail_mem=17.44 GB):  50%|█████     | 14/28 [00:26<00:02,  4.68it/s]
+Capturing batches (bs=18 avail_mem=17.39 GB):  54%|█████▎    | 15/28 [00:27<00:02,  5.24it/s]
+Capturing batches (bs=16 avail_mem=17.39 GB):  57%|█████▋    | 16/28 [00:27<00:02,  5.89it/s]
+Capturing batches (bs=14 avail_mem=17.34 GB):  61%|██████    | 17/28 [00:27<00:01,  5.78it/s]
+Capturing batches (bs=12 avail_mem=17.30 GB):  64%|██████▍   | 18/28 [00:27<00:01,  5.38it/s]
+Capturing batches (bs=12 avail_mem=17.30 GB):  68%|██████▊   | 19/28 [00:27<00:01,  5.39it/s]
+Capturing batches (bs=10 avail_mem=17.31 GB):  68%|██████▊   | 19/28 [00:27<00:01,  5.39it/s]
+Capturing batches (bs=8 avail_mem=17.28 GB):  71%|███████▏  | 20/28 [00:27<00:01,  5.42it/s]
+Capturing batches (bs=7 avail_mem=17.23 GB):  75%|███████▌  | 21/28 [00:28<00:01,  5.51it/s]
+Capturing batches (bs=6 avail_mem=17.21 GB):  75%|███████▌  | 21/28 [00:28<00:01,  5.51it/s]
+Capturing batches (bs=5 avail_mem=17.17 GB):  82%|████████▏ | 23/28 [00:28<00:00,  6.30it/s]
+Capturing batches (bs=4 avail_mem=17.14 GB):  82%|████████▏ | 23/28 [00:28<00:00,  6.30it/s]
+Capturing batches (bs=3 avail_mem=17.10 GB):  89%|████████▉ | 25/28 [00:28<00:00,  6.31it/s]
+Capturing batches (bs=2 avail_mem=17.07 GB):  93%|█████████▎| 26/28 [00:28<00:00,  6.53it/s]
+Capturing batches (bs=1 avail_mem=17.02 GB):  96%|█████████▋| 27/28 [00:29<00:00,  5.90it/s]
+Capturing batches (bs=1 avail_mem=17.02 GB): 100%|██████████| 28/28 [00:29<00:00,  1.05s/it]
+Capturing batches (bs=72 avail_mem=16.86 GB):   0%|          | 0/28 [00:00<?, ?it/s]
+Capturing batches (bs=56 avail_mem=16.66 GB):   4%|▎         | 1/28 [00:00<00:03,  6.87it/s]
+Capturing batches (bs=44 avail_mem=16.65 GB):  14%|█▍        | 4/28 [00:00<00:01, 17.24it/s]
+Capturing batches (bs=32 avail_mem=16.62 GB):  25%|██▌       | 7/28 [00:00<00:00, 21.81it/s]
+Capturing batches (bs=30 avail_mem=16.60 GB):  25%|██▌       | 7/28 [00:00<00:00, 21.81it/s]
+Capturing batches (bs=28 avail_mem=16.60 GB):  36%|███▌      | 10/28 [00:00<00:00, 19.64it/s]
+Capturing batches (bs=26 avail_mem=16.58 GB):  36%|███▌      | 10/28 [00:00<00:00, 19.64it/s]
+Capturing batches (bs=24 avail_mem=16.58 GB):  36%|███▌      | 10/28 [00:00<00:00, 19.64it/s]
+Capturing batches (bs=22 avail_mem=16.56 GB):  46%|████▋     | 13/28 [00:00<00:01, 12.42it/s]
+Capturing batches (bs=18 avail_mem=16.54 GB):  54%|█████▎    | 15/28 [00:01<00:01, 11.74it/s]
+Capturing batches (bs=10 avail_mem=16.50 GB):  61%|██████    | 17/28 [00:01<00:00, 12.19it/s]
+Capturing batches (bs=6 avail_mem=16.48 GB):  75%|███████▌  | 21/28 [00:01<00:00, 16.01it/s]
+Capturing batches (bs=4 avail_mem=16.46 GB):  86%|████████▌ | 24/28 [00:01<00:00, 17.58it/s]
+Capturing batches (bs=1 avail_mem=16.42 GB):  86%|████████▌ | 24/28 [00:01<00:00, 17.58it/s]
+Capturing batches (bs=1 avail_mem=16.42 GB): 100%|██████████| 28/28 [00:01<00:00, 16.42it/s]
+(TaskRunner pid=896203) LLMServerManager: ['172.29.157.79:34291']
+(WorkerDict pid=898533) /workspace/storage-shared/nlp/dungdx4/phuc_projects/My_GrowMTP-main/verl/verl/utils/device.py:146: FutureWarning: torch.cuda._set_allocator_settings is deprecated. Use torch._C._accelerator_setAllocatorSettings instead.
+(WorkerDict pid=898533)   torch.cuda.memory._set_allocator_settings(f"expandable_segments:{enable}")
+(WorkerDict pid=898533) WARNING:2026-09-25 12:05:28,473:TensorRT-LLM MHA only supports page_size of 16, 32 or 64, changing page_size from None to 64.
+(pid=912649) W0925 12:05:31.165000 912649 torch/utils/_pytree.py:630] <enum 'KernelPreference'> is an Enum subclass and is now natively supported by torch.compile as an opaque value type. Calling register_constant() on Enum subclasses is deprecated and will be an error in a future release.
+(pid=912649) W0925 12:05:31.208000 912649 torch/utils/_pytree.py:630] <enum 'ScaleCalculationMode'> is an Enum subclass and is now natively supported by torch.compile as an opaque value type. Calling register_constant() on Enum subclasses is deprecated and will be an error in a future release.
+(AgentLoopWorker pid=912649) Using dataset class: RLHFDataset
+(SGLangHttpServer pid=903348) /workspace/storage-shared/nlp/dungdx4/phuc_projects/phucvenv/lib/python3.12/site-packages/fastapi/routing.py:328: FastAPIDeprecationWarning: ORJSONResponse is deprecated, FastAPI now serializes data directly to JSON bytes via Pydantic when a return type or response model is set, which is faster and doesn't need a custom response class. Read more in the FastAPI docs: https://fastapi.tiangolo.com/advanced/custom-response/#orjson-or-response-model and https://fastapi.tiangolo.com/tutorial/response-model/
+(SGLangHttpServer pid=903348)   return await dependant.call(**values)
+(GlobalRequestLoadBalancer pid=912650) W0925 12:05:32.752000 912650 torch/utils/_pytree.py:630] <enum 'KernelPreference'> is an Enum subclass and is now natively supported by torch.compile as an opaque value type. Calling register_constant() on Enum subclasses is deprecated and will be an error in a future release. [repeated 2x across cluster]
+(GlobalRequestLoadBalancer pid=912650) W0925 12:05:32.796000 912650 torch/utils/_pytree.py:630] <enum 'ScaleCalculationMode'> is an Enum subclass and is now natively supported by torch.compile as an opaque value type. Calling register_constant() on Enum subclasses is deprecated and will be an error in a future release. [repeated 2x across cluster]
+Training Progress:   0%|          | 0/1 [00:00<?, ?it/s]
+(WorkerDict pid=898533) /workspace/storage-shared/nlp/dungdx4/phuc_projects/My_GrowMTP-main/verl/verl/utils/device.py:146: FutureWarning: torch.cuda._set_allocator_settings is deprecated. Use torch._C._accelerator_setAllocatorSettings instead.
+(WorkerDict pid=898533)   torch.cuda.memory._set_allocator_settings(f"expandable_segments:{enable}")
+(TaskRunner pid=896203) W0925 12:06:13.969000 896203 torch/fx/_symbolic_trace.py:56] is_fx_tracing will return true for both fx.symbolic_trace and torch.export. Please use is_fx_tracing_symbolic_tracing() for specifically fx.symbolic_trace or torch.compiler.is_compiling() for specifically torch.export/compile.
+(WorkerDict pid=898533) [rank0]:W0925 12:06:20.026000 898533 torch/fx/_symbolic_trace.py:56] is_fx_tracing will return true for both fx.symbolic_trace and torch.export. Please use is_fx_tracing_symbolic_tracing() for specifically fx.symbolic_trace or torch.compiler.is_compiling() for specifically torch.export/compile.
+(TaskRunner pid=896203) local_global_step_folder: /workspace/storage-shared/nlp/dungdx4/phuc_projects/outputs/qwen3-4b-growmtp-dapo-smoke-20260925-115323/global_step_1
+(AgentLoopWorker pid=912648) Using dataset class: RLHFDataset
+(WorkerDict pid=898533) INFO:2026-09-25 12:06:47,517:[Rank 0] Saved model to /workspace/storage-shared/nlp/dungdx4/phuc_projects/outputs/qwen3-4b-growmtp-dapo-smoke-20260925-115323/global_step_1/actor/model_world_size_1_rank_0.pt
+(WorkerDict pid=898533) INFO:2026-09-25 12:06:48,643:[Rank 0] Saved optim to /workspace/storage-shared/nlp/dungdx4/phuc_projects/outputs/qwen3-4b-growmtp-dapo-smoke-20260925-115323/global_step_1/actor/optim_world_size_1_rank_0.pt
+(WorkerDict pid=898533) INFO:2026-09-25 12:06:48,645:[Rank 0] Saved extra_state to /workspace/storage-shared/nlp/dungdx4/phuc_projects/outputs/qwen3-4b-growmtp-dapo-smoke-20260925-115323/global_step_1/actor/extra_state_world_size_1_rank_0.pt
+(WorkerDict pid=898533) INFO:2026-09-25 12:06:48,721:[Rank 0] Saved model config and tokenizer class to /workspace/storage-shared/nlp/dungdx4/phuc_projects/outputs/qwen3-4b-growmtp-dapo-smoke-20260925-115323/global_step_1/actor/huggingface
+(WorkerDict pid=898533) INFO:2026-09-25 12:06:48,724:[Rank 0] Saved LoRA rank/alpha metadata to /workspace/storage-shared/nlp/dungdx4/phuc_projects/outputs/qwen3-4b-growmtp-dapo-smoke-20260925-115323/global_step_1/actor/lora_train_meta.json
+(WorkerDict pid=898533) [transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+Writing model shards:   0%|          | 0/1 [00:00<?, ?it/s]
+Writing model shards: 100%|██████████| 1/1 [00:05<00:00,  5.72s/it]
+(WorkerDict pid=898533) INFO:2026-09-25 12:07:20,793:[Rank 0] Saved hf_model to /workspace/storage-shared/nlp/dungdx4/phuc_projects/outputs/qwen3-4b-growmtp-dapo-smoke-20260925-115323/global_step_1/actor/huggingface
+(WorkerDict pid=898533) /workspace/storage-shared/nlp/dungdx4/phuc_projects/My_GrowMTP-main/verl/verl/utils/device.py:146: FutureWarning: torch.cuda._set_allocator_settings is deprecated. Use torch._C._accelerator_setAllocatorSettings instead.
+(WorkerDict pid=898533)   torch.cuda.memory._set_allocator_settings(f"expandable_segments:{enable}")
+(TaskRunner pid=896203) step:1 - actor/entropy:0.12920477986335754 - perf/mfu/actor_infer:0.0008992130113098479 - actor/pg_clipfrac:np.float64(0.0) - actor/ppo_kl:np.float64(0.0) - actor/pg_clipfrac_lower:np.float64(0.0) - actor/w_neg:np.float64(0.5) - actor/pg_loss:np.float64(0.0) - actor/kl_loss:np.float64(0.0) - actor/kl_coef:np.float64(0.01) - actor/mtp/num_cycles:np.float64(254.0) - actor/mtp/dca_loss:np.float64(11.784100870447835) - actor/mtp/alpha_valid_only:np.float64(1.0) - actor/mtp/projected_steps:np.float64(254.0) - actor/mtp/projected_steps_fraction:np.float64(0.2) - actor/mtp/alpha_1_valid_count:np.float64(254.0) - actor/mtp/alpha_1:np.float64(7.567421980495528e-05) - actor/mtp/alpha_2_valid_count:np.float64(0.0) - actor/mtp/alpha_3_valid_count:np.float64(0.0) - actor/mtp/alpha_4_valid_count:np.float64(0.0) - actor/mtp/alpha_5_valid_count:np.float64(0.0) - actor/mtp/lr:np.float64(0.0) - actor/loss:np.float64(0.0) - actor/grad_norm:np.float64(1.1500309705734253) - actor/lr:np.float64(1e-06) - actor/perf/max_memory_allocated_gb:np.float64(19.828137397766113) - actor/perf/max_memory_reserved_gb:np.float64(20.3828125) - actor/perf/cpu_memory_used_gb:np.float64(334.7464485168457) - perf/mfu/actor:np.float64(0.0010511483218662212) - training/global_step:1 - training/epoch:0 - critic/score/mean:-1.0 - critic/score/max:-1.0 - critic/score/min:-1.0 - critic/rewards/mean:-1.0 - critic/rewards/max:-1.0 - critic/rewards/min:-1.0 - critic/advantages/mean:0.0 - critic/advantages/max:0.0 - critic/advantages/min:0.0 - critic/returns/mean:0.0 - critic/returns/max:0.0 - critic/returns/min:0.0 - response_length/mean:128.0 - response_length/max:128.0 - response_length/min:128.0 - response_length/clip_ratio:1.0 - response_length_non_aborted/mean:128.0 - response_length_non_aborted/max:128.0 - response_length_non_aborted/min:128.0 - response_length_non_aborted/clip_ratio:1.0 - response/aborted_ratio:0.0 - prompt_length/mean:101.0 - prompt_length/max:101.0 - prompt_length/min:101.0 - prompt_length/clip_ratio:0.0 - num_turns/min:np.int32(2) - num_turns/max:np.int32(2) - num_turns/mean:np.float64(2.0) - timing_s/start_profile:0.00020796991884708405 - timing_s/agent_loop/num_preempted/min:np.int64(-1) - timing_s/agent_loop/num_preempted/max:np.int64(-1) - timing_s/agent_loop/num_preempted/mean:np.float64(-1.0) - timing_s/agent_loop/generate_sequences/min:np.float64(25.574942409992218) - timing_s/agent_loop/generate_sequences/max:np.float64(25.601321544498205) - timing_s/agent_loop/generate_sequences/mean:np.float64(25.58813197724521) - timing_s/agent_loop/tool_calls/min:np.float64(0.0) - timing_s/agent_loop/tool_calls/max:np.float64(0.0) - timing_s/agent_loop/tool_calls/mean:np.float64(0.0) - timing_s/agent_loop/compute_score/min:np.float64(0.13489628862589598) - timing_s/agent_loop/compute_score/max:np.float64(0.1371505567803979) - timing_s/agent_loop/compute_score/mean:np.float64(0.13602342270314693) - timing_s/agent_loop/slowest/generate_sequences:np.float64(25.601321544498205) - timing_s/agent_loop/slowest/tool_calls:np.float64(0.0) - timing_s/agent_loop/slowest/compute_score:np.float64(0.13489628862589598) - timing_s/agent_loop/slowest/num_preempted:np.int64(-1) - timing_s/agent_loop/slowest/prompt_length:101 - timing_s/agent_loop/slowest/response_length:128 - timing_s/gen:31.778947160579264 - timing_s/reward:1.8446706235408783e-05 - timing_s/old_log_prob:2.139129309915006 - timing_s/ref:0.1529996618628502 - timing_s/adv:0.05504968483000994 - timing_s/update_actor:5.22207891754806 - timing_s/save_checkpoint:53.45750455092639 - timing_s/update_weights:17.392887474037707 - timing_s/step:110.21701860520989 - timing_s/stop_profile:3.0389055609703064e-05 - timing_per_token_ms/gen:124.13651234601275 - timing_per_token_ms/adv:0.12019581840613523 - timing_per_token_ms/ref:0.3340603970804589 - timing_per_token_ms/update_actor:11.40191903394773 - perf/total_num_tokens:458 - perf/time_per_step:110.21701860520989 - perf/throughput:4.155438114693756 - rollout/spec_accept_rate:0.0 - rollout/spec_accept_length:1.0 - rollout/mtp/acceptance_length:1.0
+(TaskRunner pid=896203) 'Final validation metrics: None'
+Training Progress: 100%|██████████| 1/1 [01:50<00:00, 110.53s/it]
+(TaskRunner pid=896203) Traceback (most recent call last):
+(TaskRunner pid=896203)   File "/workspace/storage-shared/nlp/dungdx4/phuc_projects/phucvenv/lib/python3.12/site-packages/ray/_private/workers/default_worker.py", line 323, in <module>
+(TaskRunner pid=896203)     worker.main_loop()
+(TaskRunner pid=896203)   File "/workspace/storage-shared/nlp/dungdx4/phuc_projects/phucvenv/lib/python3.12/site-packages/ray/_private/worker.py", line 1066, in main_loop
+(TaskRunner pid=896203)     self.core_worker.run_task_loop()
+(TaskRunner pid=896203)   File "/workspace/storage-shared/nlp/dungdx4/phuc_projects/phucvenv/lib/python3.12/site-packages/torch/utils/data/_utils/signal_handling.py", line 73, in handler
+(TaskRunner pid=896203)     _error_if_any_worker_fails()
+(TaskRunner pid=896203) RuntimeError: DataLoader worker (pid 914125) is killed by signal: Killed.
+
+Run complete. Output: /workspace/storage-shared/nlp/dungdx4/phuc_projects/outputs/qwen3-4b-growmtp-dapo-smoke-20260925-115323
+bash: syntax error near unexpected token `|'
+# bash

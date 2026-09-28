@@ -4,7 +4,6 @@ import argparse
 import json
 import os
 from pathlib import Path
-import subprocess
 import sys
 
 CONFIG_DIR = Path(__file__).resolve().parents[1] / "config" / "growmtp"
@@ -108,8 +107,11 @@ def train(args):
         if finished >= requested:
             if not (Path(args.output) / f"global_step_{finished}").is_dir():
                 raise ValueError("Checkpoint marker refers to a missing checkpoint directory")
-            print(f"Requested {requested} steps already completed (checkpoint {finished}).")
-            return
+            suspend_marker = Path(args.output) / ".suspend_requested"
+            if not suspend_marker.is_file():
+                print(f"Requested {requested} steps already completed (checkpoint {finished}).")
+                return
+            print("Final checkpoint exists; trainer will finish its validation before exiting.")
     from transformers import AutoConfig
     from verl.workers.config.model import HFModelConfig
 
@@ -118,8 +120,12 @@ def train(args):
     expected = presets()[args.model]["family"]
     if family not in (expected, expected + "_text"):
         raise ValueError(f"Checkpoint family {family!r} does not match preset {expected!r}")
-    Path(args.output).mkdir(parents=True, exist_ok=True)
-    subprocess.run(command, check=True, cwd=Path(args.output).resolve())
+    import os
+
+    output_dir = Path(args.output).resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    os.chdir(output_dir)
+    os.execv(sys.executable, command)
 
 
 def infer(args):

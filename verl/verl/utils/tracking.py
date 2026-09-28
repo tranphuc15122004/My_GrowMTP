@@ -169,9 +169,26 @@ class Tracking:
             self.logger["tensorboard"] = _TensorboardAdapter(project_name, experiment_name)
 
         if "console" in default_backend:
+            import os
+            from pathlib import Path
+
             from verl.utils.logger import LocalLogger
 
-            self.console_logger = LocalLogger(print_to_console=True)
+            trainer_config = config.get("trainer", {}) if config is not None else {}
+            configured_log_level = os.environ.get("GROWMTP_LOG_LEVEL")
+            log_level = configured_log_level.lower() if configured_log_level else "normal"
+            output_dir = trainer_config.get("default_local_dir")
+            run_dir = os.environ.get("GROWMTP_RUN_DIR")
+            metrics_path = None
+            if configured_log_level and log_level in {"compact", "normal", "debug"} and (run_dir or output_dir):
+                run_root = Path(run_dir).resolve() if run_dir else Path(output_dir).resolve().parent
+                metrics_path = run_root / "logs" / "metrics.jsonl"
+            self.console_logger = LocalLogger(
+                print_to_console=True,
+                log_level=log_level,
+                total_steps=trainer_config.get("total_training_steps"),
+                metrics_path=metrics_path,
+            )
             self.logger["console"] = self.console_logger
 
         if "clearml" in default_backend:

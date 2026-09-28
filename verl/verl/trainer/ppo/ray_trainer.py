@@ -1392,6 +1392,28 @@ class RayPPOTrainer:
         self.checkpoint_manager.update_weights(self.global_steps)
 
         current_epoch = self.global_steps // len(self.train_dataloader)
+        suspend_request_dir = self.config.trainer.get("default_local_dir", None)
+        suspend_request_file = (
+            os.path.join(suspend_request_dir, ".suspend_requested") if suspend_request_dir else None
+        )
+
+        def suspend_requested():
+            return suspend_request_file is not None and os.path.exists(suspend_request_file)
+
+        if suspend_requested():
+            self._save_checkpoint()
+            self._shutdown_dump_executor()
+            pprint(f"Suspension requested before training; checkpoint remains at step {self.global_steps}.")
+            return
+
+        if self.global_steps >= self.total_training_steps:
+            last_val_metrics = None
+            if self.config.trainer.test_freq > 0:
+                last_val_metrics = self._validate()
+            self._shutdown_dump_executor()
+            pprint(f"Training already reached step {self.global_steps}; no update was repeated.")
+            pprint(f"Final validation metrics: {last_val_metrics}")
+            return
 
         # perform validation before training
         # currently, we only support validation using the reward_function.
@@ -1403,6 +1425,12 @@ class RayPPOTrainer:
             if self.config.trainer.get("val_only", False):
                 self._shutdown_dump_executor()
                 return
+
+        if suspend_requested():
+            self._save_checkpoint()
+            self._shutdown_dump_executor()
+            pprint(f"Suspension requested before the first training step; checkpoint remains at step {self.global_steps}.")
+            return
 
         if self.config.actor_rollout_ref.rollout.skip.get("enable", False):
             rollout_skip = RolloutSkip(self.config, self.async_rollout_manager)
@@ -1428,6 +1456,7 @@ class RayPPOTrainer:
             for batch_dict in self.train_dataloader:
                 if hasattr(self.actor_rollout_wg, "async_calls_finalize_fn_exec"):
                     self.actor_rollout_wg.async_calls_finalize_fn_exec(blocking=False)
+                checkpoint_saved = False
                 metrics = {}
                 timing_raw = {}
 
@@ -1674,6 +1703,7 @@ class RayPPOTrainer:
                                 print("Force saving checkpoint: ESI instance expiration approaching.")
                             with marked_timer("save_checkpoint", timing_raw, color="green"):
                                 self._save_checkpoint()
+                                checkpoint_saved = True
 
                         # update weights from trainer to rollout
                         with marked_timer("update_weights", timing_raw, color="red"):
@@ -1793,6 +1823,18 @@ class RayPPOTrainer:
                 logger.log(data=metrics, step=self.global_steps)
 
                 progress_bar.update(1)
+
+                if suspend_requested():
+                    if not checkpoint_saved:
+                        with marked_timer("save_checkpoint", timing_raw, color="green"):
+                            self._save_checkpoint()
+                    if hasattr(self.actor_rollout_wg, "async_calls_finalize_fn_exec"):
+                        self.actor_rollout_wg.async_calls_finalize_fn_exec(blocking=True)
+                    self._shutdown_dump_executor()
+                    progress_bar.close()
+                    pprint(f"Training suspended safely after checkpoint at step {self.global_steps}.")
+                    return
+
                 self.global_steps += 1
 
                 if is_last_step:

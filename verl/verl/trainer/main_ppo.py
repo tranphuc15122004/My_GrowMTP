@@ -58,6 +58,41 @@ def run_ppo(config, task_runner_class=None) -> None:
                 model paths, and training hyperparameters.
         task_runner_class: For recipe to change TaskRunner.
     """
+    import signal
+    import threading
+    from pathlib import Path
+
+    stop_requested = False
+    previous_signal_handlers = {}
+    can_handle_signals = threading.current_thread() is threading.main_thread()
+
+    def request_graceful_stop(signum, frame):
+        nonlocal stop_requested
+        stop_requested = True
+
+    if can_handle_signals:
+        for signum in (signal.SIGINT, signal.SIGTERM):
+            previous_signal_handlers[signum] = signal.getsignal(signum)
+            signal.signal(signum, request_graceful_stop)
+
+    output_dir = config.trainer.get("default_local_dir", None)
+    suspend_request_file = Path(output_dir) / ".suspend_requested" if output_dir else None
+    stop_request_file = Path(output_dir) / ".stop_after_step" if output_dir else None
+    log_level = os.environ.get("GROWMTP_LOG_LEVEL", "").lower()
+    if suspend_request_file is not None:
+        suspend_request_file.parent.mkdir(parents=True, exist_ok=True)
+        suspend_request_file.unlink(missing_ok=True)
+        if log_level:
+            from datetime import datetime, timezone
+
+            run_root = Path(os.environ.get("GROWMTP_RUN_DIR", suspend_request_file.parent.parent))
+            config_dir = run_root / "config"
+            config_dir.mkdir(parents=True, exist_ok=True)
+            stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            config_path = config_dir / f"resolved_config-{stamp}-{os.getpid()}.yaml"
+            OmegaConf.save(config, config_path, resolve=True)
+            print(f"Resolved training config saved: {config_path}")
+
     # Check if Ray is not initialized
     if not ray.is_initialized():
         # Initialize Ray with a local cluster configuration
@@ -68,15 +103,22 @@ def run_ppo(config, task_runner_class=None) -> None:
         ray_init_kwargs = config.ray_kwargs.get("ray_init", {})
         runtime_env_kwargs = ray_init_kwargs.get("runtime_env", {})
 
+        runtime_env_vars = runtime_env_kwargs.get("env_vars", {})
         if config.transfer_queue.enable:
             # Add runtime environment variables for transfer queue
-            runtime_env_vars = runtime_env_kwargs.get("env_vars", {})
             runtime_env_vars["TRANSFER_QUEUE_ENABLE"] = "1"
+        if log_level:
+            runtime_env_vars["GROWMTP_LOG_LEVEL"] = log_level
+        run_dir = os.environ.get("GROWMTP_RUN_DIR")
+        if run_dir:
+            runtime_env_vars["GROWMTP_RUN_DIR"] = run_dir
+        if runtime_env_vars:
             runtime_env_kwargs["env_vars"] = runtime_env_vars
 
         runtime_env = OmegaConf.merge(default_runtime_env, runtime_env_kwargs)
         ray_init_kwargs = OmegaConf.create({**ray_init_kwargs, "runtime_env": runtime_env})
-        print(f"ray init kwargs: {ray_init_kwargs}")
+        if log_level not in ("compact", "normal"):
+            print(f"ray init kwargs: {ray_init_kwargs}")
         ray.init(**OmegaConf.to_container(ray_init_kwargs))
 
     if task_runner_class is None:
@@ -99,7 +141,34 @@ def run_ppo(config, task_runner_class=None) -> None:
         runner = task_runner_class.options(runtime_env={"nsight": nsight_options}).remote()
     else:
         runner = task_runner_class.remote()
-    ray.get(runner.run.remote(config))
+    try:
+        run_ref = runner.run.remote(config)
+        suspend_request_written = False
+        stop_file_exists = stop_request_file is not None and stop_request_file.exists()
+        if stop_requested or stop_file_exists:
+            if suspend_request_file is not None:
+                suspend_request_file.touch()
+                suspend_request_written = True
+                print("Stop requested; trainer will checkpoint at the next safe boundary.")
+        while True:
+            ready_refs, _ = ray.wait([run_ref], timeout=1.0)
+            if ready_refs:
+                ray.get(run_ref)
+                break
+            stop_file_exists = stop_request_file is not None and stop_request_file.exists()
+            if (stop_requested or stop_file_exists) and not suspend_request_written:
+                if suspend_request_file is None:
+                    print(
+                        "Graceful suspension requested, but trainer.default_local_dir is unset; "
+                        "the trainer cannot receive the checkpoint request."
+                    )
+                else:
+                    suspend_request_file.touch()
+                    print("Stop requested; trainer will checkpoint after the current training step.")
+                suspend_request_written = True
+    finally:
+        for signum, previous_handler in previous_signal_handlers.items():
+            signal.signal(signum, previous_handler)
 
     # [Optional] get the path of the timeline trace file from the configuration, default to None
     # This file is used for performance analysis
@@ -238,7 +307,9 @@ class TaskRunner:
         from verl.utils.fs import copy_to_local
 
         print(f"TaskRunner hostname: {socket.gethostname()}, PID: {os.getpid()}")
-        pprint(OmegaConf.to_container(config, resolve=True))
+        log_level = os.environ.get("GROWMTP_LOG_LEVEL", "").lower()
+        if log_level not in ("compact", "normal"):
+            pprint(OmegaConf.to_container(config, resolve=True))
         OmegaConf.resolve(config)
 
         actor_rollout_cls, ray_worker_group_cls = self.add_actor_rollout_worker(config)

@@ -16,7 +16,9 @@ A Ray logger will receive logging info from different processes.
 """
 
 import datetime
+import json
 import logging
+import math
 import numbers
 import pprint
 
@@ -40,15 +42,103 @@ class LocalLogger:
         print_to_console (bool): Whether to print to the console.
     """
 
-    def __init__(self, print_to_console=True):
+    def __init__(self, print_to_console=True, *, log_level="normal", total_steps=None, metrics_path=None):
         self.print_to_console = print_to_console
+        self.log_level = log_level
+        self.metrics_path = metrics_path
+        self.metrics_write_failed = False
+        try:
+            self.total_steps = int(total_steps) if total_steps is not None else None
+        except (TypeError, ValueError):
+            self.total_steps = None
+
+    @staticmethod
+    def _number(data, *keys):
+        for key in keys:
+            value = data.get(key)
+            if value is None:
+                continue
+            if hasattr(value, "item"):
+                try:
+                    value = value.item()
+                except (TypeError, ValueError, RuntimeError):
+                    continue
+            if isinstance(value, numbers.Number):
+                return float(value)
+        return None
+
+    def _format_compact(self, data, step):
+        try:
+            current_step = int(step)
+        except (TypeError, ValueError):
+            current_step = None
+
+        if current_step is not None and self.total_steps:
+            progress = min(100.0, 100.0 * current_step / self.total_steps)
+            fields = [f"{current_step:04d}/{self.total_steps:04d} · {progress:4.1f}%"]
+        else:
+            fields = [f"step {step}"]
+
+        metrics = (
+            ("reward", ("critic/rewards/mean", "critic/score/mean"), ".3f", ""),
+            ("policy", ("actor/pg_loss",), ".4f", ""),
+            ("MTP/DCA", ("actor/mtp/dca_loss",), ".3f", ""),
+            ("LR", ("actor/lr",), ".2e", ""),
+            ("speed", ("perf/throughput",), ".2f", " tok/s"),
+            ("step", ("timing_s/step",), ".1f", " s"),
+            ("MTP accept", ("rollout/mtp/acceptance_length",), ".2f", ""),
+        )
+        for label, keys, format_spec, suffix in metrics:
+            value = self._number(data, *keys)
+            if value is not None:
+                fields.append(f"{label} {format(value, format_spec)}{suffix}")
+
+        allocated = self._number(data, "actor/perf/max_memory_allocated_gb")
+        reserved = self._number(data, "actor/perf/max_memory_reserved_gb")
+        if allocated is not None:
+            memory = f"GPU {allocated:.1f} GB"
+            if reserved is not None:
+                memory += f"/{reserved:.1f} GB reserved"
+            fields.append(memory)
+
+        return "GROWMTP_STEP │ " + " │ ".join(fields)
+
+    def _write_metrics(self, data, step):
+        if self.metrics_path is None:
+            return
+        row = {
+            "timestamp_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+            "step": int(step) if str(step).isdigit() else step,
+        }
+        for key, value in data.items():
+            if hasattr(value, "item"):
+                try:
+                    value = value.item()
+                except (TypeError, ValueError, RuntimeError):
+                    continue
+            if isinstance(value, numbers.Real):
+                numeric_value = float(value)
+                row[key] = numeric_value if math.isfinite(numeric_value) else None
+        try:
+            with open(self.metrics_path, "a", encoding="utf-8") as metrics_file:
+                metrics_file.write(json.dumps(row, allow_nan=False, sort_keys=True) + "\n")
+        except OSError as error:
+            if not self.metrics_write_failed:
+                print(f"WARNING: could not append scalar metrics to {self.metrics_path}: {error}", flush=True)
+                self.metrics_write_failed = True
+            self.metrics_path = None
 
     def flush(self):
         pass
 
     def log(self, data, step):
+        self._write_metrics(data, step)
         if self.print_to_console:
-            print(concat_dict_to_str(data, step=step), flush=True)
+            if self.log_level == "compact":
+                output = self._format_compact(data, step)
+            else:
+                output = concat_dict_to_str(data, step=step)
+            print(output, flush=True)
 
 
 class DecoratorLoggerBase:
