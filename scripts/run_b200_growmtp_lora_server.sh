@@ -32,17 +32,26 @@ GROWMTP_ENTRYPOINT="$SCRIPT_DIR/run_b200_growmtp_lora_server.sh"
 export GROWMTP_PYTHON DATA_DIR TRAIN_FILE VAL_FILE BASE_MODEL RUN_BASE_DIR RUN_DIR LOG_LEVEL SAVE_GENERATIONS GROWMTP_ENTRYPOINT
 export PYTHONPATH="$REPO_ROOT/verl:$REPO_ROOT/sglang/python${PYTHONPATH:+:$PYTHONPATH}"
 
+SKIP_TRAINING_IMPORT_PREFLIGHT="${SKIP_TRAINING_IMPORT_PREFLIGHT:-0}"
+case "$SKIP_TRAINING_IMPORT_PREFLIGHT" in
+    0|1) ;;
+    *) printf 'ERROR: SKIP_TRAINING_IMPORT_PREFLIGHT must be 0 or 1\n' >&2; exit 2 ;;
+esac
+
 run_preflight() {
     local status
 
-    printf 'Checking trainer imports...\n'
-    "$GROWMTP_PYTHON" "$SCRIPT_DIR/check_training_imports.py"
-    status=$?
-    if (( status != 0 )); then
-        return "$status"
+    if [[ "$SKIP_TRAINING_IMPORT_PREFLIGHT" == "1" ]]; then
+        printf 'Skipping trainer import check as requested; checking launch dependencies...\n'
+    else
+        printf 'Checking trainer imports...\n'
+        "$GROWMTP_PYTHON" "$SCRIPT_DIR/check_training_imports.py"
+        status=$?
+        if (( status != 0 )); then
+            return "$status"
+        fi
+        printf 'Checking GrowMTP and SGLang launch dependencies...\n'
     fi
-
-    printf 'Checking GrowMTP and SGLang launch dependencies...\n'
     GROWMTP_PYTHON="$GROWMTP_PYTHON" bash "$SCRIPT_DIR/install.sh" --check
     status=$?
     if (( status != 0 )); then

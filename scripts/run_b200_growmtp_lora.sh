@@ -72,10 +72,15 @@ fi
 [[ "$RUN_DIR" == /* ]] || RUN_DIR="$REPO_ROOT/$RUN_DIR"
 [[ "$CHECKPOINT_DIR" == /* ]] || CHECKPOINT_DIR="$REPO_ROOT/$CHECKPOINT_DIR"
 [[ "$PREPARED_MODEL_DIR" == /* ]] || PREPARED_MODEL_DIR="$REPO_ROOT/$PREPARED_MODEL_DIR"
+RAY_TEMP_DIR="${RAY_TEMP_DIR:-/tmp/gmtp-ray-${UID:-0}-$$}"
+[[ "$RAY_TEMP_DIR" == /* ]] || die "RAY_TEMP_DIR must be an absolute path"
+RAY_TEMP_DIR_BYTES="$(printf '%s' "$RAY_TEMP_DIR" | LC_ALL=C wc -c)"
+(( RAY_TEMP_DIR_BYTES <= 39 )) || die "RAY_TEMP_DIR must be at most 39 bytes to keep Ray Unix socket paths below the system limit"
 
 RUN_DIR_EXISTED=0
 [[ ! -e "$RUN_DIR" ]] || RUN_DIR_EXISTED=1
-mkdir -p "$RUN_DIR/logs" "$RUN_DIR/config" "$RUN_DIR/runtime/ray" "$RUN_DIR/artifacts/profiling"
+mkdir -p "$RUN_DIR/logs" "$RUN_DIR/config" "$RUN_DIR/runtime" "$RUN_DIR/artifacts/profiling" "$RAY_TEMP_DIR"
+export RAY_TEMP_DIR
 command -v tee >/dev/null 2>&1 || die "tee is required to save the launcher log"
 exec > >(trap '' INT TERM; tee -a "$RUN_DIR/logs/launcher.log") 2>&1
 exec {RUN_LOCK_FD}>"$RUN_DIR/.run.lock"
@@ -236,7 +241,7 @@ write_resume_config() {
         printf '#!/usr/bin/env bash\nset -euo pipefail\n'
         local name
         for name in \
-            GROWMTP_PYTHON DATA_DIR TRAIN_FILE VAL_FILE BASE_MODEL RUN_BASE_DIR RUN_DIR \
+            GROWMTP_PYTHON DATA_DIR TRAIN_FILE VAL_FILE BASE_MODEL RUN_BASE_DIR RUN_DIR RAY_TEMP_DIR \
             RUN_MODE LOG_LEVEL SAVE_GENERATIONS DATALOADER_NUM_WORKERS LORA_RANK LORA_ALPHA \
             TARGET_MODULES_JSON FULL_TEST_FREQ REQUIRE_B200 ATTN_IMPLEMENTATION TRAIN_STEPS \
             RESPONSE_LENGTH TRAIN_BATCH_SIZE ROLLOUT_N AGENT_LOOP_WORKERS PPO_MINI_BATCH_SIZE \
@@ -262,6 +267,7 @@ export GROWMTP_LOG_LEVEL="$LOG_LEVEL" GROWMTP_RUN_DIR="$RUN_DIR"
 printf '===== Run invocation started %s =====\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> "$RUN_DIR/config/launch.txt"
 printf '%s\n' \
     "run_dir=$RUN_DIR" \
+    "ray_temp_dir=$RAY_TEMP_DIR" \
     "run_mode=$RUN_MODE" \
     "run_action=$RUN_ACTION" \
     "base_model=$BASE_MODEL" \
@@ -349,7 +355,7 @@ TRAIN_COMMAND=(
     "trainer.resume_mode=$RESUME_MODE"
 )
 TRAIN_COMMAND+=(
-    "++ray_kwargs.ray_init._temp_dir=$RUN_DIR/runtime/ray"
+    "++ray_kwargs.ray_init._temp_dir=$RAY_TEMP_DIR"
     "global_profiler.save_path=$RUN_DIR/artifacts/profiling"
 )
 if [[ "$SAVE_GENERATIONS" == 1 ]]; then

@@ -66,8 +66,11 @@ if args and args[0].endswith("run_logged.py"):
     resolved_config = run_dir / "config" / f"resolved_config-{os.getpid()}-{time.time_ns()}.yaml"
     resolved_config.write_text("trainer: fake\n")
 
-    expected_ray = str(run_dir / "runtime" / "ray")
+    expected_ray = os.environ["RAY_TEMP_DIR"]
     expected_profile = str(run_dir / "artifacts" / "profiling")
+    assert expected_ray.startswith("/tmp/gmtp-ray-")
+    ray_socket = Path(expected_ray) / "session_2026-09-30_10-48-35_765364_2413816" / "sockets" / "plasma_store"
+    assert len(os.fsencode(ray_socket)) <= 107
     assert f"++ray_kwargs.ray_init._temp_dir={expected_ray}" in train_args
     assert f"global_profiler.save_path={expected_profile}" in train_args
     assert "actor_rollout_ref.model.lora_rank=16" in train_args
@@ -90,7 +93,8 @@ raise SystemExit(0)
 
 
 def _fake_environment(
-    tmp_path, *, save_generations, run_dir=None, wait_for_stop=False, log_level="compact"
+    tmp_path, *, save_generations, run_dir=None, wait_for_stop=False, log_level="compact",
+    skip_import_preflight=False
 ):
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir(exist_ok=True)
@@ -116,6 +120,8 @@ def _fake_environment(
         "VAL_FILE": str(validation_file),
         "BASE_MODEL": "shared-model-reference",
         "RUN_BASE_DIR": str(tmp_path / "runs"),
+        "RAY_TEMP_DIR": "",
+        "SKIP_TRAINING_IMPORT_PREFLIGHT": "1" if skip_import_preflight else "0",
         "LOG_LEVEL": log_level,
         "SAVE_GENERATIONS": str(save_generations),
         "FAKE_PYTHON_LOG": str(tmp_path / "fake-python.log"),
@@ -131,19 +137,38 @@ def _fake_environment(
 
 
 def _run_launcher(
-    tmp_path, *, save_generations, run_dir=None, entrypoint=LAUNCHER, log_level="compact"
+    tmp_path, *, save_generations, run_dir=None, entrypoint=LAUNCHER, log_level="compact",
+    skip_import_preflight=False
 ):
     return subprocess.run(
         ["bash", str(entrypoint)],
         cwd=REPO_ROOT,
         env=_fake_environment(
-            tmp_path, save_generations=save_generations, run_dir=run_dir, log_level=log_level
+            tmp_path, save_generations=save_generations, run_dir=run_dir, log_level=log_level,
+            skip_import_preflight=skip_import_preflight
         ),
         capture_output=True,
         text=True,
         timeout=20,
         check=False,
     )
+
+
+def test_server_wrapper_skips_slow_import_probe_when_requested(tmp_path):
+    result = _run_launcher(
+        tmp_path,
+        save_generations=0,
+        entrypoint=SERVER_WRAPPER,
+        skip_import_preflight=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    calls = [
+        json.loads(line)
+        for line in (tmp_path / "fake-python.log").read_text().splitlines()
+    ]
+    assert not any(call and call[0].endswith("check_training_imports.py") for call in calls)
+    assert sum(call[:3] == ["-m", "verl.trainer.mtp.launch", "check"] for call in calls) == 1
+    assert "Skipping trainer import check" in result.stdout
 
 
 def test_launcher_isolates_generated_files_and_resumes_in_same_run(tmp_path):
@@ -163,7 +188,8 @@ def test_launcher_isolates_generated_files_and_resumes_in_same_run(tmp_path):
     assert "GROWMTP_STEP" in (first_run_dir / "logs" / "training.log").read_text()
     metric = json.loads((first_run_dir / "logs" / "metrics.jsonl").read_text().splitlines()[0])
     assert metric == {"step": 1, "actor/pg_loss": 0.25}
-    assert (first_run_dir / "runtime" / "ray").is_dir()
+    assert (first_run_dir / "runtime").is_dir()
+    assert not (first_run_dir / "runtime" / "ray").exists()
     assert (first_run_dir / "artifacts" / "profiling").is_dir()
     assert (first_run_dir / "artifacts" / "rollouts").is_dir()
     assert (first_run_dir / "artifacts" / "validation").is_dir()
@@ -174,6 +200,8 @@ def test_launcher_isolates_generated_files_and_resumes_in_same_run(tmp_path):
     assert resume_script.is_file()
     assert str(first_run_dir) in resume_script.read_text()
     assert f"export GROWMTP_RESUME_CONFIG={resume_script}" in resume_script.read_text()
+    assert "export RAY_TEMP_DIR=/tmp/gmtp-ray-" in resume_script.read_text()
+    assert "ray_temp_dir=/tmp/gmtp-ray-" in (first_run_dir / "config" / "launch.txt").read_text()
     assert "result=complete" in (first_run_dir / "config" / "launch.txt").read_text()
 
     resumed = subprocess.run(

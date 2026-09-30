@@ -14,6 +14,8 @@ On the configured server, use its wrapper to select the server model and validat
 RUN_MODE=smoke LOG_LEVEL=compact bash scripts/run_b200_growmtp_lora_server.sh
 ```
 
+After the trainer import check passes once for the same Python environment, set SKIP_TRAINING_IMPORT_PREFLIGHT=1 on a retry. This skips only the import probe; the GrowMTP/SGLang dependency check still runs.
+
 ## Run folder
 
 Each run keeps its generated files together:
@@ -34,13 +36,15 @@ RUN_DIR/
     profiling/              # profiler output when profiling is enabled
     rollouts/               # optional rollout generations
     validation/             # optional validation generations
-  runtime/ray/              # Ray session files and logs
+  runtime/                  # launcher support state
   .run.lock                 # prevents simultaneous launchers using the same run
 ```
 
 `SAVE_GENERATIONS=1` enables rollout and validation dumps in the run folder. It is off by default because those dumps can grow quickly. Profiler output is directed into `artifacts/profiling` when profiling is enabled.
 
 The input parquet files and source model remain shared inputs. The prepared model and all training outputs are run-local.
+
+Ray uses a short per-process path under /tmp by default to stay below the Unix socket path limit. Set RAY_TEMP_DIR only if you need to choose another absolute path of at most 39 bytes.
 
 ## Console and logs
 
