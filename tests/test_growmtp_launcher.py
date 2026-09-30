@@ -78,6 +78,15 @@ if args and args[0].endswith("run_logged.py"):
     assert "actor_rollout_ref.model.lora.merge=true" in train_args
     assert "actor_rollout_ref.model.target_modules=[\"q_proj\",\"v_proj\"]" in train_args
     assert "data.dataloader_num_workers=0" in train_args
+    if os.environ.get("FAKE_GCS_FAILURE") == "1":
+        session = Path(os.environ["RAY_TEMP_DIR"]) / "session_fake"
+        ray_logs = session / "logs"
+        ray_logs.mkdir(parents=True)
+        (ray_logs / "gcs_server.err").write_text("simulated GCS startup failure\\n")
+        (Path(os.environ["RAY_TEMP_DIR"]) / "session_latest").symlink_to(
+            session.name, target_is_directory=True
+        )
+        raise SystemExit(1)
     for arg in train_args:
         if arg.startswith("trainer.rollout_data_dir="):
             Path(arg.split("=", 1)[1]).mkdir(parents=True, exist_ok=True)
@@ -94,7 +103,7 @@ raise SystemExit(0)
 
 def _fake_environment(
     tmp_path, *, save_generations, run_dir=None, wait_for_stop=False, log_level="compact",
-    skip_import_preflight=False
+    skip_import_preflight=False, fake_ray_failure=False
 ):
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir(exist_ok=True)
@@ -122,6 +131,7 @@ def _fake_environment(
         "RUN_BASE_DIR": str(tmp_path / "runs"),
         "RAY_TEMP_DIR": "",
         "SKIP_TRAINING_IMPORT_PREFLIGHT": "1" if skip_import_preflight else "0",
+        "FAKE_GCS_FAILURE": "1" if fake_ray_failure else "0",
         "LOG_LEVEL": log_level,
         "SAVE_GENERATIONS": str(save_generations),
         "FAKE_PYTHON_LOG": str(tmp_path / "fake-python.log"),
@@ -138,20 +148,48 @@ def _fake_environment(
 
 def _run_launcher(
     tmp_path, *, save_generations, run_dir=None, entrypoint=LAUNCHER, log_level="compact",
-    skip_import_preflight=False
+    skip_import_preflight=False, fake_ray_failure=False
 ):
     return subprocess.run(
         ["bash", str(entrypoint)],
         cwd=REPO_ROOT,
         env=_fake_environment(
             tmp_path, save_generations=save_generations, run_dir=run_dir, log_level=log_level,
-            skip_import_preflight=skip_import_preflight
+            skip_import_preflight=skip_import_preflight,
+            fake_ray_failure=fake_ray_failure
         ),
         capture_output=True,
         text=True,
         timeout=20,
         check=False,
     )
+
+
+def test_launcher_reuses_prepared_model_when_only_hydra_outputs_exist(tmp_path):
+    run_dir = tmp_path / "runs" / "previous-ray-failure"
+    (run_dir / "prepared_model").mkdir(parents=True)
+    (run_dir / "prepared_model" / "prepared.marker").write_text("ready")
+    hydra_output = run_dir / "checkpoints" / "outputs" / "2026-09-30" / "12-18-32"
+    hydra_output.mkdir(parents=True)
+    (hydra_output / "hydra.log").write_text("Ray failed before training")
+
+    result = _run_launcher(tmp_path, save_generations=0, run_dir=run_dir)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "Reusing prepared model and restarting training at step 0" in result.stdout
+    assert "prepared_model_reused=1" in (run_dir / "config" / "launch.txt").read_text()
+    calls = [json.loads(line) for line in (tmp_path / "fake-python.log").read_text().splitlines()]
+    assert not any(call[:3] == ["-m", "verl.trainer.mtp.launch", "prepare"] for call in calls)
+
+
+def test_launcher_copies_ray_logs_when_training_fails(tmp_path):
+    result = _run_launcher(
+        tmp_path, save_generations=0, fake_ray_failure=True
+    )
+    assert result.returncode == 1
+    run_dir = Path(next((tmp_path / "runs").iterdir()))
+    copied_log = next((run_dir / "logs").glob("ray-*/gcs_server.err"))
+    assert "simulated GCS startup failure" in copied_log.read_text()
+    assert "Ray session logs copied to" in result.stdout
 
 
 def test_server_wrapper_skips_slow_import_probe_when_requested(tmp_path):

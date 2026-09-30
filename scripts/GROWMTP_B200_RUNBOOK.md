@@ -26,6 +26,7 @@ RUN_DIR/
   checkpoints/             # resumable trainer state and stop markers
   logs/
     launcher.log           # preflight and concise launcher output
+    ray-*/                 # Ray session logs copied after a trainer failure
     training.log           # timestamped full trainer stdout and stderr
     metrics.jsonl           # scalar training metrics, one record per step
   config/

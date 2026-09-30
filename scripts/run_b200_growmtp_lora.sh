@@ -12,9 +12,11 @@ VAL_FILE="${VAL_FILE:-${DATA_DIR}/test.parquet}"
 BASE_MODEL="${BASE_MODEL:-Qwen/Qwen3-4B}"
 RUN_BASE_DIR="${RUN_BASE_DIR:-/workspace/storage-shared/nlp/dungdx4/phuc_projects/outputs/qwen3-4b-growmtp-lora/runs}"
 
-# smoke: one optimizer step over two rollouts of one prompt. full: repo preset (500 steps, 8192 response tokens).
+# smoke: one-step wiring check. pilot: three bounded steps sized per GPU.
+# full: 500 steps with batch/workers scaled per GPU; all settings are overridable.
 RUN_MODE="${RUN_MODE:-smoke}"
 RUN_ACTION="${RUN_ACTION:-auto}"
+TRAIN_GPUS="${TRAIN_GPUS:-2}"
 DATALOADER_NUM_WORKERS="${DATALOADER_NUM_WORKERS:-0}"
 LOG_LEVEL="${LOG_LEVEL:-compact}"
 SAVE_GENERATIONS="${SAVE_GENERATIONS:-0}"
@@ -106,6 +108,7 @@ trap forward_graceful_stop INT TERM
 [[ -f "$VAL_FILE" ]] || die "Validation/test parquet not found: $VAL_FILE"
 [[ "$LORA_RANK" =~ ^[1-9][0-9]*$ ]] || die "LORA_RANK must be a positive integer"
 [[ "$LORA_ALPHA" =~ ^[1-9][0-9]*$ ]] || die "LORA_ALPHA must be a positive integer"
+[[ "$TRAIN_GPUS" =~ ^[1-9][0-9]*$ ]] || die "TRAIN_GPUS must be a positive integer"
 [[ "$DATALOADER_NUM_WORKERS" =~ ^[0-9]+$ ]] || die "DATALOADER_NUM_WORKERS must be a non-negative integer"
 [[ "$SAVE_GENERATIONS" == 0 || "$SAVE_GENERATIONS" == 1 ]] || die "SAVE_GENERATIONS must be 0 or 1"
 case "$LOG_LEVEL" in
@@ -119,7 +122,7 @@ command -v nvidia-smi >/dev/null 2>&1 || die "nvidia-smi is not available; run t
 GPU_SUMMARY="$(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader)"
 printf 'Visible GPUs:\n%s\n' "$GPU_SUMMARY"
 
-export REQUIRE_B200
+export REQUIRE_B200 TRAIN_GPUS
 "$GROWMTP_PYTHON" - <<'PY'
 import os
 import torch
@@ -128,6 +131,12 @@ if not torch.cuda.is_available():
     raise SystemExit("CUDA is unavailable in the selected Python environment")
 names = [torch.cuda.get_device_name(i) for i in range(torch.cuda.device_count())]
 print("PyTorch CUDA devices:", names)
+expected = int(os.environ["TRAIN_GPUS"])
+if len(names) != expected:
+    raise SystemExit(
+        f"TRAIN_GPUS={expected}, but PyTorch sees {len(names)} GPU(s); "
+        "select the intended cards with CUDA_VISIBLE_DEVICES"
+    )
 if not torch.cuda.is_bf16_supported():
     raise SystemExit("This GrowMTP setup expects a GPU with BF16 support")
 if os.environ.get("REQUIRE_B200", "1") == "1" and not any("B200" in name.upper() for name in names):
@@ -172,8 +181,9 @@ if [[ "$RUN_ACTION" == "auto" ]]; then
     if [[ -f "$CHECKPOINT_DIR/latest_checkpointed_iteration.txt" ]]; then
         RUN_ACTION="resume"
     elif (( RUN_DIR_EXISTED )) && [[ -d "$PREPARED_MODEL_DIR" ]] && \
-        [[ -z "$(find "$CHECKPOINT_DIR" -mindepth 1 -maxdepth 1 ! -name .stop_after_step -print -quit 2>/dev/null || true)" ]]; then
-        # Preparation finished but training never produced a checkpoint; reuse that model and restart at step 0.
+        [[ ! -f "$CHECKPOINT_DIR/latest_checkpointed_iteration.txt" ]] && \
+        [[ -z "$(find "$CHECKPOINT_DIR" -type d -name 'global_step_*' -print -quit 2>/dev/null || true)" ]]; then
+        # Ignore Hydra's outputs/ metadata; only trainer checkpoint markers block model reuse.
         RUN_ACTION="fresh"
         PREPARED_MODEL_REUSE=1
     else
@@ -213,27 +223,52 @@ case "$RUN_MODE" in
         ROLLOUT_N="${ROLLOUT_N:-2}"
         AGENT_LOOP_WORKERS="${AGENT_LOOP_WORKERS:-$ROLLOUT_N}"
         PPO_MINI_BATCH_SIZE="${PPO_MINI_BATCH_SIZE:-1}"
-        MAX_BATCHED_TOKENS=4096
-        MAX_TOKEN_LEN_PER_GPU=8192
+        MAX_BATCHED_TOKENS="${MAX_BATCHED_TOKENS:-4096}"
+        MAX_TOKEN_LEN_PER_GPU="${MAX_TOKEN_LEN_PER_GPU:-8192}"
         SAVE_FREQ="${SAVE_FREQ:-1}"
-        TEST_FREQ=-1
+        TEST_FREQ="${TEST_FREQ:--1}"
+        ;;
+    pilot)
+        TRAIN_STEPS="${TRAIN_STEPS:-3}"
+        RESPONSE_LENGTH="${RESPONSE_LENGTH:-1024}"
+        TRAIN_BATCH_SIZE="${TRAIN_BATCH_SIZE:-$((2 * TRAIN_GPUS))}"
+        ROLLOUT_N="${ROLLOUT_N:-2}"
+        AGENT_LOOP_WORKERS="${AGENT_LOOP_WORKERS:-$TRAIN_GPUS}"
+        PPO_MINI_BATCH_SIZE="${PPO_MINI_BATCH_SIZE:-$TRAIN_BATCH_SIZE}"
+        MAX_BATCHED_TOKENS="${MAX_BATCHED_TOKENS:-$((4096 * TRAIN_GPUS))}"
+        MAX_TOKEN_LEN_PER_GPU="${MAX_TOKEN_LEN_PER_GPU:-8192}"
+        SAVE_FREQ="${SAVE_FREQ:-1}"
+        TEST_FREQ="${TEST_FREQ:--1}"
         ;;
     full)
-        TRAIN_STEPS=500
-        RESPONSE_LENGTH=8192
-        TRAIN_BATCH_SIZE=64
-        ROLLOUT_N=8
-        AGENT_LOOP_WORKERS=8
-        PPO_MINI_BATCH_SIZE=64
-        MAX_BATCHED_TOKENS=32768
-        MAX_TOKEN_LEN_PER_GPU=32768
+        TRAIN_STEPS="${TRAIN_STEPS:-500}"
+        RESPONSE_LENGTH="${RESPONSE_LENGTH:-4096}"
+        TRAIN_BATCH_SIZE="${TRAIN_BATCH_SIZE:-$((8 * TRAIN_GPUS))}"
+        ROLLOUT_N="${ROLLOUT_N:-4}"
+        DEFAULT_AGENT_LOOP_WORKERS=$((4 * TRAIN_GPUS))
+        (( DEFAULT_AGENT_LOOP_WORKERS <= 72 )) || DEFAULT_AGENT_LOOP_WORKERS=72
+        AGENT_LOOP_WORKERS="${AGENT_LOOP_WORKERS:-$DEFAULT_AGENT_LOOP_WORKERS}"
+        PPO_MINI_BATCH_SIZE="${PPO_MINI_BATCH_SIZE:-$TRAIN_BATCH_SIZE}"
+        MAX_BATCHED_TOKENS="${MAX_BATCHED_TOKENS:-$((8192 * TRAIN_GPUS))}"
+        MAX_TOKEN_LEN_PER_GPU="${MAX_TOKEN_LEN_PER_GPU:-16384}"
         SAVE_FREQ="${SAVE_FREQ:-10}"
-        TEST_FREQ="$FULL_TEST_FREQ"
+        TEST_FREQ="${TEST_FREQ:-$FULL_TEST_FREQ}"
         ;;
     *)
-        die "RUN_MODE must be 'smoke' or 'full'"
+        die "RUN_MODE must be 'smoke', 'pilot', or 'full'"
         ;;
 esac
+
+for setting in TRAIN_STEPS RESPONSE_LENGTH TRAIN_BATCH_SIZE ROLLOUT_N AGENT_LOOP_WORKERS \
+    PPO_MINI_BATCH_SIZE MAX_BATCHED_TOKENS MAX_TOKEN_LEN_PER_GPU SAVE_FREQ; do
+    [[ "${!setting}" =~ ^[1-9][0-9]*$ ]] || die "$setting must be a positive integer"
+done
+[[ "$TEST_FREQ" == "-1" || "$TEST_FREQ" =~ ^[1-9][0-9]*$ ]] || \
+    die "TEST_FREQ must be -1 or a positive integer"
+(( PPO_MINI_BATCH_SIZE <= TRAIN_BATCH_SIZE * ROLLOUT_N )) || \
+    die "PPO_MINI_BATCH_SIZE must not exceed TRAIN_BATCH_SIZE * ROLLOUT_N"
+(( MAX_TOKEN_LEN_PER_GPU >= RESPONSE_LENGTH )) || \
+    die "MAX_TOKEN_LEN_PER_GPU must be at least RESPONSE_LENGTH"
 
 write_resume_config() {
     local resume_script="$RUN_DIR/config/resume.sh"
@@ -242,7 +277,7 @@ write_resume_config() {
         local name
         for name in \
             GROWMTP_PYTHON DATA_DIR TRAIN_FILE VAL_FILE BASE_MODEL RUN_BASE_DIR RUN_DIR RAY_TEMP_DIR \
-            RUN_MODE LOG_LEVEL SAVE_GENERATIONS DATALOADER_NUM_WORKERS LORA_RANK LORA_ALPHA \
+            RUN_MODE TRAIN_GPUS LOG_LEVEL SAVE_GENERATIONS DATALOADER_NUM_WORKERS LORA_RANK LORA_ALPHA \
             TARGET_MODULES_JSON FULL_TEST_FREQ REQUIRE_B200 ATTN_IMPLEMENTATION TRAIN_STEPS \
             RESPONSE_LENGTH TRAIN_BATCH_SIZE ROLLOUT_N AGENT_LOOP_WORKERS PPO_MINI_BATCH_SIZE \
             MAX_BATCHED_TOKENS MAX_TOKEN_LEN_PER_GPU SAVE_FREQ TEST_FREQ GROWMTP_ENTRYPOINT; do
@@ -269,6 +304,7 @@ printf '%s\n' \
     "run_dir=$RUN_DIR" \
     "ray_temp_dir=$RAY_TEMP_DIR" \
     "run_mode=$RUN_MODE" \
+    "train_gpus=$TRAIN_GPUS" \
     "run_action=$RUN_ACTION" \
     "base_model=$BASE_MODEL" \
     "prepared_model=$PREPARED_MODEL_DIR" \
@@ -293,6 +329,7 @@ printf '%s\n' \
 printf '\n╭─ GrowMTP Qwen3-4B LoRA ──────────────────────────────\n'
 printf '│ Action      %s\n' "$RUN_ACTION"
 printf '│ Mode        %s (%s steps)\n' "$RUN_MODE" "$TRAIN_STEPS"
+printf '│ Train GPUs  %s\n' "$TRAIN_GPUS"
 printf '│ LoRA        rank %s · alpha %s · targets %s\n' "$LORA_RANK" "$LORA_ALPHA" "$TARGET_MODULES_JSON"
 printf '│ Run folder  %s\n' "$RUN_DIR"
 printf '│ Console     %s\n' "$LOG_LEVEL"
@@ -330,7 +367,7 @@ TRAIN_COMMAND=(
     --train-file "$TRAIN_FILE"
     --val-file "$VAL_FILE"
     --output "$CHECKPOINT_DIR"
-    --gpus 1
+    --gpus "$TRAIN_GPUS"
     --nodes 1
     --steps "$TRAIN_STEPS"
     --response-length "$RESPONSE_LENGTH"
@@ -388,6 +425,21 @@ trap - INT TERM
 rm -f "$CHECKPOINT_DIR/.stop_after_step"
 
 if (( TRAIN_STATUS != 0 )); then
+    RAY_SESSION_TARGET="$(readlink "$RAY_TEMP_DIR/session_latest" 2>/dev/null || true)"
+    RAY_SESSION_NAME="${RAY_SESSION_TARGET##*/}"
+    [[ -n "$RAY_SESSION_NAME" ]] || RAY_SESSION_NAME=unknown
+    RAY_SESSION_LOGS="$RAY_TEMP_DIR/session_latest/logs"
+    if [[ -d "$RAY_SESSION_LOGS" ]]; then
+        RAY_LOG_DIR="$RUN_DIR/logs/ray-$RAY_SESSION_NAME"
+        mkdir -p "$RAY_LOG_DIR"
+        if cp -a "$RAY_SESSION_LOGS/." "$RAY_LOG_DIR/"; then
+            printf 'Ray session logs copied to: %s\n' "$RAY_LOG_DIR"
+        else
+            printf 'WARNING: could not copy Ray logs from %s\\n' "$RAY_SESSION_LOGS" >&2
+        fi
+    else
+        printf 'Ray session logs were not found under %s\\n' "$RAY_SESSION_LOGS" >&2
+    fi
     printf 'finished_utc=%s\nresult=failed\nexit_code=%s\n' \
         "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$TRAIN_STATUS" >> "$RUN_DIR/config/launch.txt"
     printf 'Training process exited with status %s.\n' "$TRAIN_STATUS" >&2
