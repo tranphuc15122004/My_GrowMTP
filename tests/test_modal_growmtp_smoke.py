@@ -1,4 +1,6 @@
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 
 from scripts.check_training_imports import verify_training_imports
@@ -92,6 +94,19 @@ class ModalSmokeEnvironmentTests(unittest.TestCase):
             imported,
             ["torchdata.stateful_dataloader", "verl.trainer.main_ppo"],
         )
+
+    def test_training_preflight_reports_each_import_before_loading_it(self):
+        output = StringIO()
+
+        def successful_import(module_name):
+            self.assertIn(f"Checking training import: {module_name}", output.getvalue())
+            return object()
+
+        with redirect_stdout(output):
+            verify_training_imports(successful_import)
+
+        self.assertIn("Training import OK: torchdata.stateful_dataloader", output.getvalue())
+        self.assertIn("Training import OK: verl.trainer.main_ppo", output.getvalue())
 
     def test_training_preflight_names_the_missing_dependency(self):
         def missing_torchdata(module_name):

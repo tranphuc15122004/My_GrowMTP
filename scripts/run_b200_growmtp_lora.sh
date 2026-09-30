@@ -129,8 +129,10 @@ if os.environ.get("REQUIRE_B200", "1") == "1" and not any("B200" in name.upper()
     raise SystemExit("No B200 is visible to this Python process; refusing to launch")
 PY
 
-printf '\nChecking GrowMTP dependencies with %s\n' "$GROWMTP_PYTHON"
-GROWMTP_PYTHON="$GROWMTP_PYTHON" bash "$REPO_ROOT/scripts/install.sh" --check
+if [[ "${GROWMTP_PREFLIGHT_PASSED:-0}" != "1" ]]; then
+    printf '\nChecking GrowMTP dependencies with %s\n' "$GROWMTP_PYTHON"
+    GROWMTP_PYTHON="$GROWMTP_PYTHON" bash "$REPO_ROOT/scripts/install.sh" --check
+fi
 
 "$GROWMTP_PYTHON" - "$TRAIN_FILE" "$VAL_FILE" <<'PY'
 import sys

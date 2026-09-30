@@ -32,13 +32,36 @@ GROWMTP_ENTRYPOINT="$SCRIPT_DIR/run_b200_growmtp_lora_server.sh"
 export GROWMTP_PYTHON DATA_DIR TRAIN_FILE VAL_FILE BASE_MODEL RUN_BASE_DIR RUN_DIR LOG_LEVEL SAVE_GENERATIONS GROWMTP_ENTRYPOINT
 export PYTHONPATH="$REPO_ROOT/verl:$REPO_ROOT/sglang/python${PYTHONPATH:+:$PYTHONPATH}"
 
-if ! "$GROWMTP_PYTHON" "$SCRIPT_DIR/check_training_imports.py" \
-    || ! GROWMTP_PYTHON="$GROWMTP_PYTHON" bash "$SCRIPT_DIR/install.sh" --check; then
+run_preflight() {
+    local status
+
+    printf 'Checking trainer imports...\n'
+    "$GROWMTP_PYTHON" "$SCRIPT_DIR/check_training_imports.py"
+    status=$?
+    if (( status != 0 )); then
+        return "$status"
+    fi
+
+    printf 'Checking GrowMTP and SGLang launch dependencies...\n'
+    GROWMTP_PYTHON="$GROWMTP_PYTHON" bash "$SCRIPT_DIR/install.sh" --check
+    status=$?
+    if (( status != 0 )); then
+        return "$status"
+    fi
+}
+
+PREFLIGHT_STATUS=0
+run_preflight || PREFLIGHT_STATUS=$?
+if (( PREFLIGHT_STATUS == 130 || PREFLIGHT_STATUS == 143 )); then
+    exit "$PREFLIGHT_STATUS"
+fi
+if (( PREFLIGHT_STATUS != 0 )); then
     printf 'GrowMTP dependencies are incomplete; installing the pinned runtime into %s.\n' "$GROWMTP_PYTHON"
     "$GROWMTP_PYTHON" "$SCRIPT_DIR/install_modal_image_deps.py" --repo-root "$REPO_ROOT"
+    printf 'Rechecking the training environment after dependency installation.\n'
+    run_preflight || exit "$?"
 fi
 
-printf 'Preflighting the real trainer before any model preparation/download.\n'
-GROWMTP_PYTHON="$GROWMTP_PYTHON" bash "$SCRIPT_DIR/install.sh" --check
-"$GROWMTP_PYTHON" "$SCRIPT_DIR/check_training_imports.py"
+printf 'Preflight passed; preparing the run.\n'
+export GROWMTP_PREFLIGHT_PASSED=1
 exec bash "$SCRIPT_DIR/run_b200_growmtp_lora.sh"

@@ -21,6 +21,10 @@ import time
 from pathlib import Path
 
 args = sys.argv[1:]
+python_log = os.environ.get("FAKE_PYTHON_LOG")
+if python_log:
+    with open(python_log, "a") as stream:
+        stream.write(json.dumps(args) + "\n")
 if args[:3] == ["-m", "verl.trainer.mtp.launch", "prepare"]:
     output = Path(args[args.index("--output") + 1])
     output.mkdir(parents=True, exist_ok=True)
@@ -114,6 +118,7 @@ def _fake_environment(
         "RUN_BASE_DIR": str(tmp_path / "runs"),
         "LOG_LEVEL": log_level,
         "SAVE_GENERATIONS": str(save_generations),
+        "FAKE_PYTHON_LOG": str(tmp_path / "fake-python.log"),
         "RUN_MODE": "smoke",
         "REQUIRE_B200": "1",
     }
@@ -144,6 +149,12 @@ def _run_launcher(
 def test_launcher_isolates_generated_files_and_resumes_in_same_run(tmp_path):
     first = _run_launcher(tmp_path, save_generations=1, entrypoint=SERVER_WRAPPER)
     assert first.returncode == 0, first.stdout + first.stderr
+    python_calls = [
+        json.loads(line)
+        for line in (tmp_path / "fake-python.log").read_text().splitlines()
+    ]
+    assert sum(call and call[0].endswith("check_training_imports.py") for call in python_calls) == 1
+    assert sum(call[:3] == ["-m", "verl.trainer.mtp.launch", "check"] for call in python_calls) == 1
     first_run_dir = Path(next((tmp_path / "runs").iterdir()))
 
     assert (first_run_dir / "prepared_model" / "prepared.marker").is_file()

@@ -12,7 +12,7 @@ p_t
 q_t,
 $$
 
-trong đó \(p_t\) là distribution của target verifier và \(q_t\) là distribution của draft head.
+trong đó $p_t$ là distribution của target verifier và $q_t$ là distribution của draft head.
 
 Vấn đề là sau mỗi RL step, target policy được update:
 
@@ -20,7 +20,7 @@ $$
 \pi_t \rightarrow \pi_{t+1}.
 $$
 
-Trong khi draft head vừa được tối ưu để match \(p_t\), nó lại được sử dụng ngay với target mới \(p_{t+1}\).
+Trong khi draft head vừa được tối ưu để match $p_t$, nó lại được sử dụng ngay với target mới $p_{t+1}$.
 
 Do đó tồn tại một dạng **draft–target staleness**:
 
@@ -68,7 +68,7 @@ $$
 A_r
 $$
 
-cho mỗi rollout \(r\).
+cho mỗi rollout $r$.
 
 Advantage cho biết trajectory nào policy **được khuyến khích dịch chuyển tới**:
 
@@ -130,7 +130,7 @@ Hai tín hiệu này không trùng nhau.
 
 # 4. Policy-shift score
 
-Với rollout \(r\), định nghĩa average shift:
+Với rollout $r$, định nghĩa average shift:
 
 $$
 D_r
@@ -184,7 +184,7 @@ khi:
 
 # 5. Selective Future-Policy Refresh
 
-Không recompute \(p_{t+1}\) cho toàn bộ rollout vì overhead sẽ lớn.
+Không recompute $p_{t+1}$ cho toàn bộ rollout vì overhead sẽ lớn.
 
 Chỉ chọn:
 
@@ -194,7 +194,7 @@ $$
 \operatorname{TopR}(S_r)
 $$
 
-ví dụ top \(25\%\).
+ví dụ top $25\%$.
 
 Đối với sample không cần refresh:
 
