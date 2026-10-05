@@ -131,13 +131,12 @@ def main() -> None:
     if visible_gpus != args.gpus:
         raise RuntimeError(f"Expected {args.gpus} visible GPU(s), found {visible_gpus}")
 
-    # The training config uses TP=1 rollout replicas. A single SGLang DP engine
-    # over the same GPUs gives the baseline the same number of independent replicas.
+    # Match rollout TP per replica; dp_size uses the remaining GPUs as replicas.
     dp_size = args.gpus // args.tp_per_replica
     engine = sgl.Engine(
         model_path=args.model_path,
         dtype="bfloat16",
-        tp_size=args.gpus,
+        tp_size=args.tp_per_replica,
         dp_size=dp_size,
         mem_fraction_static=args.memory_fraction,
         max_running_requests=args.max_running_requests,
