@@ -5,12 +5,13 @@
 A launch without `RUN_DIR` creates a timestamped, isolated folder under `RUN_BASE_DIR`. The server wrapper defaults to the 500-step `full` preset and GPUs `0,1`.
 
 ```bash
-GPU_IDS=0,1 RUN_MODE=full LOG_LEVEL=compact bash scripts/run_b200_growmtp_lora_server.sh
+bash scripts/run_b200_growmtp_lora_server.sh --gpuid 2,3
 ```
 
-Set `GPU_IDS` to the physical GPU indices to use. The launcher checks that each selected card is a B200 with about 180 GB of memory, sets `CUDA_VISIBLE_DEVICES`, and derives `TRAIN_GPUS` from the list. For example, to use four cards:
+`--gpuid` accepts physical GPU indices as a comma-separated list. The launcher checks that each selected card is a B200 with about 180 GB of memory, sets `CUDA_VISIBLE_DEVICES`, and derives `TRAIN_GPUS` from the list. `GPU_IDS` remains available for environment-based launches. For example, to use four cards:
 
 ```bash
+bash scripts/run_b200_growmtp_lora_server.sh --gpuid 0,1,2,3
 GPU_IDS=0,1,2,3 RUN_MODE=full LOG_LEVEL=compact bash scripts/run_b200_growmtp_lora_server.sh
 ```
 
@@ -74,6 +75,18 @@ GrowMTP rollout metrics include `draft/acceptance_length`, accepted/proposed dra
 The full preset records comparison diagnostics and applies selective future-policy draft refresh every four steps, then runs initial/final validation with 16 samples per prompt. Periodic validation remains disabled by default. `MTP_PROBE_FREQ`, `MTP_PROBE_MAX_CYCLES`, `MTP_PROBE_MAX_CONTEXT`, `MTP_REFRESH_FRACTION`, `COMPARISON_LOG_TRAJECTORIES`, `VAL_BEFORE_TRAIN`, `FINAL_VALIDATION`, and `VAL_SAMPLES` control this behavior and are preserved on resume. Smoke/pilot presets disable probing and refresh unless explicitly enabled. See [metric definitions and comparison commands](GROWMTP_COMPARISON_METRICS.md); comparison artifacts do not require `SAVE_GENERATIONS=1`.
 
 Probe cycle/context budgets bound diagnostic samples only. Refresh scores every recorded cycle of positive-advantage trajectories, selects the top fraction across eligible trajectories, and runs one mixed-teacher head update after PPO. Exact full-vocabulary detection uses a temporary FP32 cache on DP rank zero; its disk space and verifier cost scale with recorded positions and vocabulary size. Measure `draft/refresh/time_s`, `draft/shift/cache_bytes`, and E2E before running a long comparison.
+
+To match the measured `qwen3-4b-growmtp-full-gpu0-20260930T221333Z` baseline, use [run_policy_shift_matching_baseline.sh](run_policy_shift_matching_baseline.sh) after syncing the updated idea code to the server. It reads the baseline's saved resolved YAML and original prepared model, uses the selected GPUs and baseline training settings, enables refresh every four steps with fraction 0.25, and keeps validation disabled as in that measured run. Its global batch size stays at the saved baseline value when selecting multiple GPUs. For a fair throughput comparison, run both methods with the same GPU count and effective batch size. It creates a fresh output directory, rejects output inside the baseline or any existing output directory, disables HDFS checkpoint writes, and stores the temporary KL cache under the new run's `runtime/tmp`.
+
+```bash
+# GPU runtime check: exercises refresh at steps 4 and 8 in a separate short run.
+TRAIN_STEPS=8 bash scripts/run_policy_shift_matching_baseline.sh --gpuid 2,3
+
+# Full comparison: starts a new run from the original initial model/head for 500 steps.
+bash scripts/run_policy_shift_matching_baseline.sh --gpuid 2,3
+```
+
+The short run is for runtime validation; its scheduler horizon is eight steps, so its results are not a 500-step comparison. `BASELINE_RUN`, `BASELINE_CONFIG` (YAML stem), `GROWMTP_PYTHON`, `TRAIN_STEPS`, and `IDEA_RUN` can override the recorded defaults. This fresh-run helper does not generate the general launcher's `config/resume.sh`. Its printed run path identifies the checkpoints and logs if training is stopped.
 
 ## Stop and resume
 

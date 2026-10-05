@@ -17,6 +17,7 @@ RUN_BASE_DIR="${RUN_BASE_DIR:-/workspace/storage-shared/nlp/dungdx4/phuc_project
 # full: 500 steps with batch/workers scaled per GPU; all settings are overridable.
 RUN_MODE="${RUN_MODE:-smoke}"
 RUN_ACTION="${RUN_ACTION:-auto}"
+TRAIN_GPUS_REQUESTED="${TRAIN_GPUS:-}"
 TRAIN_GPUS="${TRAIN_GPUS:-2}"
 GPU_IDS="${GPU_IDS:-}"
 DATALOADER_NUM_WORKERS="${DATALOADER_NUM_WORKERS:-0}"
@@ -64,6 +65,15 @@ die() {
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+source "$SCRIPT_DIR/gpu_args.sh"
+parse_gpuid_args "$@" || exit $?
+if [[ -n "$GPU_IDS" ]]; then
+    if [[ -n "$TRAIN_GPUS_REQUESTED" && "$TRAIN_GPUS_REQUESTED" != "$GPU_COUNT" ]]; then
+        die "TRAIN_GPUS=$TRAIN_GPUS_REQUESTED does not match $GPU_COUNT GPU(s) in GPU_IDS=$GPU_IDS"
+    fi
+    TRAIN_GPUS="$GPU_COUNT"
+    export CUDA_VISIBLE_DEVICES="$GPU_IDS"
+fi
 GROWMTP_ENTRYPOINT="${GROWMTP_ENTRYPOINT:-$SCRIPT_DIR/run_b200_growmtp_lora.sh}"
 cd "$REPO_ROOT"
 

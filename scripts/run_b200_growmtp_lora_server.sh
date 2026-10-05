@@ -25,6 +25,9 @@ die() {
     exit 2
 }
 
+source "$SCRIPT_DIR/gpu_args.sh"
+parse_gpuid_args "$@" || exit $?
+
 trim() {
     local value="$1"
     value="${value#"${value%%[![:space:]]*}"}"
@@ -32,18 +35,11 @@ trim() {
     printf '%s' "$value"
 }
 
-[[ "$GPU_IDS" =~ ^[0-9]+(,[0-9]+)*$ ]] || \
-    die "GPU_IDS must be a comma-separated list of physical GPU indices (for example: 0,2,3)"
 [[ "$B200_MIN_MEMORY_MIB" =~ ^[1-9][0-9]*$ ]] || \
     die "B200_MIN_MEMORY_MIB must be a positive integer"
 command -v nvidia-smi >/dev/null 2>&1 || die "nvidia-smi is not available; run this script on the B200 server"
 
-IFS=',' read -r -a GPU_ID_ARRAY <<< "$GPU_IDS"
-declare -A SEEN_GPU_IDS=()
 for GPU_ID in "${GPU_ID_ARRAY[@]}"; do
-    [[ -z "${SEEN_GPU_IDS[$GPU_ID]:-}" ]] || die "GPU_IDS contains duplicate index $GPU_ID"
-    SEEN_GPU_IDS[$GPU_ID]=1
-
     GPU_INFO="$(nvidia-smi --id="$GPU_ID" --query-gpu=index,name,memory.total --format=csv,noheader,nounits 2>/dev/null)" || \
         die "GPU index $GPU_ID is not available according to nvidia-smi"
     IFS=',' read -r ACTUAL_GPU_ID GPU_NAME GPU_MEMORY_MIB <<< "$GPU_INFO"
@@ -61,7 +57,6 @@ for GPU_ID in "${GPU_ID_ARRAY[@]}"; do
     printf 'Selected GPU %s: %s, %s MiB\n' "$GPU_ID" "$GPU_NAME" "$GPU_MEMORY_MIB"
 done
 
-GPU_COUNT="${#GPU_ID_ARRAY[@]}"
 if [[ -n "${TRAIN_GPUS:-}" && "$TRAIN_GPUS" != "$GPU_COUNT" ]]; then
     die "TRAIN_GPUS=$TRAIN_GPUS does not match $GPU_COUNT GPU(s) in GPU_IDS=$GPU_IDS; configure GPU_IDS only"
 fi
