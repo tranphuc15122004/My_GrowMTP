@@ -8,11 +8,13 @@ cd "$REPO_ROOT"
 
 BASELINE_RUN="${BASELINE_RUN:-/workspace/storage-shared/nlp/dungdx4/phuc_projects/outputs/qwen3-4b-growmtp-lora/runs/qwen3-4b-growmtp-full-gpu0-20260930T221333Z}"
 BASELINE_CONFIG="${BASELINE_CONFIG:-resolved_config-20260930T221455Z-1321745}"
-GROWMTP_PYTHON="${GROWMTP_PYTHON:-/workspace/storage-shared/nlp/dungdx4/phuc_projects/phucvenv/bin/python}"
+GROWMTP_PYTHON="${GROWMTP_PYTHON:-}"
 TRAIN_STEPS="${TRAIN_STEPS:-500}"
 GPU_IDS="${GPU_IDS:-0}"
 
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+source "$SCRIPT_DIR/python_env.sh"
+resolve_growmtp_python "$REPO_ROOT" || die "No Python interpreter found in the active environment or PATH"
 source "$SCRIPT_DIR/gpu_args.sh"
 parse_gpuid_args "$@" || exit $?
 [[ -x "$GROWMTP_PYTHON" ]] || die "Python not found: $GROWMTP_PYTHON"
@@ -41,7 +43,7 @@ export GROWMTP_RUN_DIR="$IDEA_RUN"
 # Keep the full-vocabulary FP32 cache on the run's storage filesystem.
 export TMPDIR="$IDEA_RUN/runtime/tmp"
 
-printf 'Baseline config: %s/config/%s.yaml\n' "$BASELINE_RUN" "$BASELINE_CONFIG"
+printf 'Python: %s\nBaseline config: %s/config/%s.yaml\n' "$GROWMTP_PYTHON" "$BASELINE_RUN" "$BASELINE_CONFIG"
 printf 'Idea run: %s\nGPU IDs: %s (%s GPUs)\nSteps: %s\n' "$IDEA_RUN" "$GPU_IDS" "$GPU_COUNT" "$TRAIN_STEPS"
 printf 'Metrics: %s/logs/metrics.jsonl\n' "$IDEA_RUN"
 

@@ -15,6 +15,8 @@ bash scripts/run_b200_growmtp_lora_server.sh --gpuid 0,1,2,3
 GPU_IDS=0,1,2,3 RUN_MODE=full LOG_LEVEL=compact bash scripts/run_b200_growmtp_lora_server.sh
 ```
 
+The launchers use the active shell Python environment (`$VIRTUAL_ENV`, `$CONDA_PREFIX`, or `python` from `PATH`). Set `GROWMTP_PYTHON=/path/to/python` only when you want to override it.
+
 Use `RUN_MODE=smoke` for a one-step launch check or `RUN_MODE=pilot` for three steps. The full B200 preset scales the training batch to 8 per GPU, uses rollout `n=4`, caps agent-loop workers at 72, and scales the rollout token budget with GPU count. It defaults to a 1024-token prompt limit, 4096-token response limit, and 0.6 SGLang GPU memory utilization; the latter leaves room for the co-located trainer. Override any setting through its matching environment variable, such as `ROLLOUT_GPU_MEMORY_UTILIZATION=0.65` or `TRAIN_BATCH_SIZE=32`.
 
 After the trainer import check passes once for the same Python environment, set SKIP_TRAINING_IMPORT_PREFLIGHT=1 on a retry. This skips only the import probe; the GrowMTP/SGLang dependency check still runs.

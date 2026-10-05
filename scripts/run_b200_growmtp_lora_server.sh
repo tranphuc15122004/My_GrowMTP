@@ -5,7 +5,7 @@ set -Eeuo pipefail
 # before invoking this wrapper if a path or output destination changes.
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
-GROWMTP_PYTHON="${GROWMTP_PYTHON:-/home/tuantb/fast_infer_text_sum/.venv/bin/python}"
+GROWMTP_PYTHON="${GROWMTP_PYTHON:-}"
 DATA_DIR="${DATA_DIR:-/workspace/storage-shared/nlp/dungdx4/phuc_projects/data/DAPO-math-17.4K}"
 TRAIN_FILE="${TRAIN_FILE:-${DATA_DIR}/train.parquet}"
 VAL_FILE="${VAL_FILE:-${DATA_DIR}/validation.parquet}"
@@ -25,6 +25,8 @@ die() {
     exit 2
 }
 
+source "$SCRIPT_DIR/python_env.sh"
+resolve_growmtp_python "$REPO_ROOT" || die "No Python interpreter found in the active environment or PATH"
 source "$SCRIPT_DIR/gpu_args.sh"
 parse_gpuid_args "$@" || exit $?
 
@@ -70,6 +72,7 @@ export MAX_PROMPT_LENGTH ROLLOUT_GPU_MEMORY_UTILIZATION B200_MIN_MEMORY_MIB
     printf 'ERROR: Python executable not found: %s\n' "$GROWMTP_PYTHON" >&2
     exit 1
 }
+printf 'Using Python: %s\n' "$GROWMTP_PYTHON"
 [[ -f "$TRAIN_FILE" ]] || {
     printf 'ERROR: Training parquet not found: %s\n' "$TRAIN_FILE" >&2
     exit 1

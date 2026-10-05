@@ -4,7 +4,7 @@ set -Eeuo pipefail
 # Each fresh invocation gets a private RUN_DIR. Resume with its generated
 # config/resume.sh so the saved settings are restored. LOG_LEVEL controls detail.
 # Ctrl-C or SIGTERM asks the trainer to checkpoint at the next safe step boundary.
-GROWMTP_PYTHON="${GROWMTP_PYTHON:-/home/tuantb/fast_infer_text_sum/.venv/bin/python}"
+GROWMTP_PYTHON="${GROWMTP_PYTHON:-}"
 DATA_DIR="${DATA_DIR:-/workspace/storage-shared/nlp/dungdx4/phuc_projects/data/DAPO-math-17.4K}"
 TRAIN_FILE="${TRAIN_FILE:-${DATA_DIR}/train.parquet}"
 VAL_FILE="${VAL_FILE:-${DATA_DIR}/test.parquet}"
@@ -65,6 +65,9 @@ die() {
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
+source "$SCRIPT_DIR/python_env.sh"
+resolve_growmtp_python "$REPO_ROOT" || die "No Python interpreter found in the active environment or PATH"
+printf 'Using Python: %s\n' "$GROWMTP_PYTHON"
 source "$SCRIPT_DIR/gpu_args.sh"
 parse_gpuid_args "$@" || exit $?
 if [[ -n "$GPU_IDS" ]]; then
