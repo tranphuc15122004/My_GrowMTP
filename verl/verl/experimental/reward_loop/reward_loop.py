@@ -40,6 +40,11 @@ def migrate_legacy_reward_impl(config):
     """
     Migrate the legacy reward model implementation to the new one.
     """
+    # Resolved configs are saved after this migration, so loading one again may
+    # already have the legacy fields removed. Keep that new-format config intact.
+    if "reward_model" not in config:
+        return config
+
     # 1. reward workers migration
     # config.reward_model.num_workers -> config.reward.num_workers
     if config.reward_model.num_workers is not None:
