@@ -8,6 +8,7 @@ GROWMTP_PYTHON="${GROWMTP_PYTHON:-/home/tuantb/fast_infer_text_sum/.venv/bin/pyt
 DATA_DIR="${DATA_DIR:-/workspace/storage-shared/nlp/dungdx4/phuc_projects/data/DAPO-math-17.4K}"
 TRAIN_FILE="${TRAIN_FILE:-${DATA_DIR}/train.parquet}"
 VAL_FILE="${VAL_FILE:-${DATA_DIR}/test.parquet}"
+PROMPT_KEY="${PROMPT_KEY:-prompt}"
 
 BASE_MODEL="${BASE_MODEL:-Qwen/Qwen3-4B}"
 RUN_BASE_DIR="${RUN_BASE_DIR:-/workspace/storage-shared/nlp/dungdx4/phuc_projects/outputs/qwen3-4b-growmtp-lora/runs}"
@@ -17,6 +18,7 @@ RUN_BASE_DIR="${RUN_BASE_DIR:-/workspace/storage-shared/nlp/dungdx4/phuc_project
 RUN_MODE="${RUN_MODE:-smoke}"
 RUN_ACTION="${RUN_ACTION:-auto}"
 TRAIN_GPUS="${TRAIN_GPUS:-2}"
+GPU_IDS="${GPU_IDS:-}"
 DATALOADER_NUM_WORKERS="${DATALOADER_NUM_WORKERS:-0}"
 LOG_LEVEL="${LOG_LEVEL:-compact}"
 SAVE_GENERATIONS="${SAVE_GENERATIONS:-0}"
@@ -30,6 +32,15 @@ TARGET_MODULES_JSON="${TARGET_MODULES_JSON:-[\"q_proj\",\"v_proj\"]}"
 # Set it to e.g. 50 only when VAL_FILE is a separate validation split.
 FULL_TEST_FREQ="${FULL_TEST_FREQ:--1}"
 REQUIRE_B200="${REQUIRE_B200:-1}"
+B200_MIN_MEMORY_MIB="${B200_MIN_MEMORY_MIB:-170000}"
+AR_BASELINE_MS_PER_TOKEN="${AR_BASELINE_MS_PER_TOKEN:-}"
+AR_BASELINE_TOKENS_PER_SECOND_PER_GPU="${AR_BASELINE_TOKENS_PER_SECOND_PER_GPU:-}"
+AR_BASELINE_AUTO="${AR_BASELINE_AUTO:-1}"
+AR_BASELINE_REQUESTS="${AR_BASELINE_REQUESTS:-}"
+AR_BASELINE_REPEATS="${AR_BASELINE_REPEATS:-2}"
+AR_BASELINE_TP_SIZE_PER_REPLICA="${AR_BASELINE_TP_SIZE_PER_REPLICA:-1}"
+ROLLOUT_GPU_MEMORY_UTILIZATION="${ROLLOUT_GPU_MEMORY_UTILIZATION:-0.6}"
+MAX_PROMPT_LENGTH="${MAX_PROMPT_LENGTH:-512}"
 
 # Transformers 5.12.1 with Torch 2.13/CUDA 13 does not have a published
 # flash-attn2 kernel variant yet. SDPA is supported on B200 and Blackwell GPUs.
@@ -104,6 +115,29 @@ forward_graceful_stop() {
 trap forward_graceful_stop INT TERM
 
 [[ -x "$GROWMTP_PYTHON" ]] || die "Python executable not found: $GROWMTP_PYTHON"
+if [[ -n "$AR_BASELINE_MS_PER_TOKEN" && -n "$AR_BASELINE_TOKENS_PER_SECOND_PER_GPU" ]]; then
+    die "Set only one of AR_BASELINE_MS_PER_TOKEN or AR_BASELINE_TOKENS_PER_SECOND_PER_GPU"
+fi
+[[ "$AR_BASELINE_AUTO" == 0 || "$AR_BASELINE_AUTO" == 1 ]] || die "AR_BASELINE_AUTO must be 0 or 1"
+if [[ -n "$AR_BASELINE_MS_PER_TOKEN" ]]; then
+    [[ "$AR_BASELINE_MS_PER_TOKEN" =~ ^[0-9]+([.][0-9]+)?$ ]] || \
+        die "AR_BASELINE_MS_PER_TOKEN must be a positive number"
+    "$GROWMTP_PYTHON" -c 'import math, sys; value=float(sys.argv[1]); sys.exit(0 if math.isfinite(value) and value > 0 else 1)' \
+        "$AR_BASELINE_MS_PER_TOKEN" || \
+        die "AR_BASELINE_MS_PER_TOKEN must be a positive finite number"
+    EXTRA_HYDRA_OVERRIDES+=(
+        "actor_rollout_ref.model.mtp.ar_baseline_ms_per_token=$AR_BASELINE_MS_PER_TOKEN"
+    )
+elif [[ -n "$AR_BASELINE_TOKENS_PER_SECOND_PER_GPU" ]]; then
+    [[ "$AR_BASELINE_TOKENS_PER_SECOND_PER_GPU" =~ ^[0-9]+([.][0-9]+)?$ ]] || \
+        die "AR_BASELINE_TOKENS_PER_SECOND_PER_GPU must be a positive number"
+    "$GROWMTP_PYTHON" -c 'import math, sys; value=float(sys.argv[1]); sys.exit(0 if math.isfinite(value) and value > 0 else 1)' \
+        "$AR_BASELINE_TOKENS_PER_SECOND_PER_GPU" || \
+        die "AR_BASELINE_TOKENS_PER_SECOND_PER_GPU must be a positive finite number"
+    EXTRA_HYDRA_OVERRIDES+=(
+        "actor_rollout_ref.model.mtp.ar_baseline_tokens_per_second_per_gpu=$AR_BASELINE_TOKENS_PER_SECOND_PER_GPU"
+    )
+fi
 [[ -f "$TRAIN_FILE" ]] || die "Training parquet not found: $TRAIN_FILE"
 [[ -f "$VAL_FILE" ]] || die "Validation/test parquet not found: $VAL_FILE"
 [[ "$LORA_RANK" =~ ^[1-9][0-9]*$ ]] || die "LORA_RANK must be a positive integer"
@@ -119,7 +153,11 @@ command -v setsid >/dev/null 2>&1 || die "setsid is required for safe signal for
 command -v flock >/dev/null 2>&1 || die "flock is required to prevent overlapping runs in one RUN_DIR"
 
 command -v nvidia-smi >/dev/null 2>&1 || die "nvidia-smi is not available; run this script on the GPU server"
-GPU_SUMMARY="$(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader)"
+if [[ -n "$GPU_IDS" ]]; then
+    GPU_SUMMARY="$(nvidia-smi --id="$GPU_IDS" --query-gpu=index,name,memory.total --format=csv,noheader)"
+else
+    GPU_SUMMARY="$(nvidia-smi --query-gpu=name,memory.total --format=csv,noheader)"
+fi
 printf 'Visible GPUs:\n%s\n' "$GPU_SUMMARY"
 
 export REQUIRE_B200 TRAIN_GPUS
@@ -148,12 +186,13 @@ if [[ "${GROWMTP_PREFLIGHT_PASSED:-0}" != "1" ]]; then
     GROWMTP_PYTHON="$GROWMTP_PYTHON" bash "$REPO_ROOT/scripts/install.sh" --check
 fi
 
-"$GROWMTP_PYTHON" - "$TRAIN_FILE" "$VAL_FILE" <<'PY'
+"$GROWMTP_PYTHON" - "$TRAIN_FILE" "$VAL_FILE" "$PROMPT_KEY" <<'PY'
 import sys
 import pyarrow.parquet as pq
 
-required = {"prompt", "reward_model", "data_source"}
-for path in sys.argv[1:]:
+prompt_key = sys.argv[3]
+required = {prompt_key, "reward_model", "data_source"}
+for path in sys.argv[1:3]:
     parquet = pq.ParquetFile(path)
     columns = set(parquet.schema_arrow.names)
     missing = required - columns
@@ -165,9 +204,9 @@ for path in sys.argv[1:]:
     if parquet.metadata.num_rows < 1 or parquet.metadata.num_row_groups < 1:
         raise SystemExit(f"{path}: parquet has no rows")
     sample = parquet.read_row_group(
-        0, columns=["prompt", "reward_model", "data_source"]
+        0, columns=[prompt_key, "reward_model", "data_source"]
     ).slice(0, 1).to_pylist()[0]
-    prompt = sample["prompt"]
+    prompt = sample[prompt_key]
     reward = sample["reward_model"]
     if not isinstance(prompt, list) or not prompt or not prompt[0].get("content"):
         raise SystemExit(f"{path}: prompt must be a non-empty chat-message list")
@@ -259,10 +298,19 @@ case "$RUN_MODE" in
         ;;
 esac
 
+if [[ -z "$AR_BASELINE_REQUESTS" ]]; then
+    AR_BASELINE_REQUESTS=$((TRAIN_BATCH_SIZE * ROLLOUT_N))
+fi
+
 for setting in TRAIN_STEPS RESPONSE_LENGTH TRAIN_BATCH_SIZE ROLLOUT_N AGENT_LOOP_WORKERS \
-    PPO_MINI_BATCH_SIZE MAX_BATCHED_TOKENS MAX_TOKEN_LEN_PER_GPU SAVE_FREQ; do
+    PPO_MINI_BATCH_SIZE MAX_BATCHED_TOKENS MAX_TOKEN_LEN_PER_GPU SAVE_FREQ MAX_PROMPT_LENGTH \
+    AR_BASELINE_REQUESTS AR_BASELINE_REPEATS AR_BASELINE_TP_SIZE_PER_REPLICA; do
     [[ "${!setting}" =~ ^[1-9][0-9]*$ ]] || die "$setting must be a positive integer"
 done
+(( TRAIN_GPUS % AR_BASELINE_TP_SIZE_PER_REPLICA == 0 )) || \
+    die "TRAIN_GPUS must be divisible by AR_BASELINE_TP_SIZE_PER_REPLICA"
+"$GROWMTP_PYTHON" -c 'import math, sys; value=float(sys.argv[1]); sys.exit(0 if math.isfinite(value) and 0 < value < 1 else 1)' \
+    "$ROLLOUT_GPU_MEMORY_UTILIZATION" || die "ROLLOUT_GPU_MEMORY_UTILIZATION must be between 0 and 1"
 [[ "$TEST_FREQ" == "-1" || "$TEST_FREQ" =~ ^[1-9][0-9]*$ ]] || \
     die "TEST_FREQ must be -1 or a positive integer"
 (( PPO_MINI_BATCH_SIZE <= TRAIN_BATCH_SIZE * ROLLOUT_N )) || \
@@ -276,11 +324,15 @@ write_resume_config() {
         printf '#!/usr/bin/env bash\nset -euo pipefail\n'
         local name
         for name in \
-            GROWMTP_PYTHON DATA_DIR TRAIN_FILE VAL_FILE BASE_MODEL RUN_BASE_DIR RUN_DIR RAY_TEMP_DIR \
-            RUN_MODE TRAIN_GPUS LOG_LEVEL SAVE_GENERATIONS DATALOADER_NUM_WORKERS LORA_RANK LORA_ALPHA \
+            GROWMTP_PYTHON DATA_DIR TRAIN_FILE VAL_FILE PROMPT_KEY BASE_MODEL RUN_BASE_DIR RUN_DIR RAY_TEMP_DIR \
+            RUN_MODE GPU_IDS TRAIN_GPUS B200_MIN_MEMORY_MIB LOG_LEVEL SAVE_GENERATIONS DATALOADER_NUM_WORKERS LORA_RANK LORA_ALPHA \
             TARGET_MODULES_JSON FULL_TEST_FREQ REQUIRE_B200 ATTN_IMPLEMENTATION TRAIN_STEPS \
             RESPONSE_LENGTH TRAIN_BATCH_SIZE ROLLOUT_N AGENT_LOOP_WORKERS PPO_MINI_BATCH_SIZE \
-            MAX_BATCHED_TOKENS MAX_TOKEN_LEN_PER_GPU SAVE_FREQ TEST_FREQ GROWMTP_ENTRYPOINT; do
+            MAX_BATCHED_TOKENS MAX_TOKEN_LEN_PER_GPU SAVE_FREQ TEST_FREQ \
+            MAX_PROMPT_LENGTH ROLLOUT_GPU_MEMORY_UTILIZATION \
+            AR_BASELINE_MS_PER_TOKEN AR_BASELINE_TOKENS_PER_SECOND_PER_GPU AR_BASELINE_AUTO \
+            AR_BASELINE_REQUESTS AR_BASELINE_REPEATS AR_BASELINE_TP_SIZE_PER_REPLICA \
+            GROWMTP_ENTRYPOINT; do
             printf 'export %s=%q\n' "$name" "${!name}"
         done
         if (( LEGACY_LAYOUT )); then
@@ -304,9 +356,12 @@ printf '%s\n' \
     "run_dir=$RUN_DIR" \
     "ray_temp_dir=$RAY_TEMP_DIR" \
     "run_mode=$RUN_MODE" \
+    "gpu_ids=${GPU_IDS:-CUDA_VISIBLE_DEVICES}" \
+    "b200_min_memory_mib=$B200_MIN_MEMORY_MIB" \
     "train_gpus=$TRAIN_GPUS" \
     "run_action=$RUN_ACTION" \
     "base_model=$BASE_MODEL" \
+    "prompt_key=$PROMPT_KEY" \
     "prepared_model=$PREPARED_MODEL_DIR" \
     "prepared_model_reused=$PREPARED_MODEL_REUSE" \
     "checkpoint_dir=$CHECKPOINT_DIR" \
@@ -314,6 +369,7 @@ printf '%s\n' \
     "validation_file=$VAL_FILE" \
     "steps=$TRAIN_STEPS" \
     "response_length=$RESPONSE_LENGTH" \
+    "max_prompt_length=$MAX_PROMPT_LENGTH" \
     "train_batch_size=$TRAIN_BATCH_SIZE" \
     "rollout_n=$ROLLOUT_N" \
     "dataloader_workers=$DATALOADER_NUM_WORKERS" \
@@ -322,6 +378,13 @@ printf '%s\n' \
     "lora_rank=$LORA_RANK" \
     "lora_alpha=$LORA_ALPHA" \
     "target_modules=$TARGET_MODULES_JSON" \
+    "ar_baseline_ms_per_token=${AR_BASELINE_MS_PER_TOKEN:-unset}" \
+    "ar_baseline_tokens_per_second_per_gpu=${AR_BASELINE_TOKENS_PER_SECOND_PER_GPU:-unset}" \
+    "ar_baseline_auto=$AR_BASELINE_AUTO" \
+    "ar_baseline_requests=$AR_BASELINE_REQUESTS" \
+    "ar_baseline_repeats=$AR_BASELINE_REPEATS" \
+    "ar_baseline_tp_size_per_replica=$AR_BASELINE_TP_SIZE_PER_REPLICA" \
+    "rollout_gpu_memory_utilization=$ROLLOUT_GPU_MEMORY_UTILIZATION" \
     "attention=$ATTN_IMPLEMENTATION" \
     "log_level=$LOG_LEVEL" \
     "started_utc=$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> "$RUN_DIR/config/launch.txt"
@@ -329,6 +392,7 @@ printf '%s\n' \
 printf '\n╭─ GrowMTP Qwen3-4B LoRA ──────────────────────────────\n'
 printf '│ Action      %s\n' "$RUN_ACTION"
 printf '│ Mode        %s (%s steps)\n' "$RUN_MODE" "$TRAIN_STEPS"
+printf '│ GPU IDs     %s\n' "${GPU_IDS:-CUDA_VISIBLE_DEVICES}"
 printf '│ Train GPUs  %s\n' "$TRAIN_GPUS"
 printf '│ LoRA        rank %s · alpha %s · targets %s\n' "$LORA_RANK" "$LORA_ALPHA" "$TARGET_MODULES_JSON"
 printf '│ Run folder  %s\n' "$RUN_DIR"
@@ -353,6 +417,96 @@ else
     printf '\nResuming GrowMTP checkpoint at step %s from:\n%s\n' "$CHECKPOINT_STEP" "$CHECKPOINT_DIR"
 fi
 
+AR_BASELINE_JSON="$RUN_DIR/artifacts/ar_baseline.json"
+AR_BASELINE_SOURCE="unset"
+AR_BASELINE_RESOLVED_MS_PER_TOKEN=""
+if [[ -n "$AR_BASELINE_MS_PER_TOKEN" ]]; then
+    AR_BASELINE_SOURCE="environment_ms_per_token"
+    AR_BASELINE_RESOLVED_MS_PER_TOKEN="$AR_BASELINE_MS_PER_TOKEN"
+elif [[ -n "$AR_BASELINE_TOKENS_PER_SECOND_PER_GPU" ]]; then
+    AR_BASELINE_SOURCE="environment_tokens_per_second_per_gpu"
+    AR_BASELINE_RESOLVED_MS_PER_TOKEN="$("$GROWMTP_PYTHON" -c \
+        'import sys; print(1000.0 / (float(sys.argv[1]) * int(sys.argv[2])))' \
+        "$AR_BASELINE_TOKENS_PER_SECOND_PER_GPU" "$TRAIN_GPUS")"
+elif [[ "$AR_BASELINE_AUTO" == "1" ]]; then
+    if [[ -s "$AR_BASELINE_JSON" ]]; then
+        AR_BASELINE_SOURCE="saved_ar_benchmark"
+        AR_BASELINE_MS_PER_TOKEN="$("$GROWMTP_PYTHON" -c \
+            'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["ms_per_token"])' \
+            "$AR_BASELINE_JSON")"
+    else
+        AR_BASELINE_SOURCE="automatic_sglang_ar_benchmark"
+        printf '\nRunning autoregressive SGLang baseline before GrowMTP training.\n'
+        AR_BASELINE_LOG="$RUN_DIR/logs/ar_baseline.log"
+        BASELINE_PYTHONPATH="$REPO_ROOT/verl:$REPO_ROOT/sglang/python"
+        if [[ -v PYTHONPATH && -n "$PYTHONPATH" ]]; then
+            BASELINE_PYTHONPATH="$BASELINE_PYTHONPATH:$PYTHONPATH"
+        fi
+        PYTHONPATH="$BASELINE_PYTHONPATH" "$GROWMTP_PYTHON" "$REPO_ROOT/scripts/benchmark_ar_baseline.py" \
+            --model-path "$PREPARED_MODEL_DIR" \
+            --train-file "$TRAIN_FILE" \
+            --prompt-key "$PROMPT_KEY" \
+            --num-prompts "$AR_BASELINE_REQUESTS" \
+            --response-length "$RESPONSE_LENGTH" \
+            --max-prompt-length "$MAX_PROMPT_LENGTH" \
+            --repeats "$AR_BASELINE_REPEATS" \
+            --gpus "$TRAIN_GPUS" \
+            --tp-per-replica "$AR_BASELINE_TP_SIZE_PER_REPLICA" \
+            --memory-fraction "$ROLLOUT_GPU_MEMORY_UTILIZATION" \
+            --output "$AR_BASELINE_JSON" 2>&1 | tee -a "$AR_BASELINE_LOG"
+        AR_BASELINE_MS_PER_TOKEN="$("$GROWMTP_PYTHON" -c \
+            'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["ms_per_token"])' \
+            "$AR_BASELINE_JSON")"
+    fi
+    "$GROWMTP_PYTHON" -c 'import math, sys; value=float(sys.argv[1]); sys.exit(0 if math.isfinite(value) and value > 0 else 1)' \
+        "$AR_BASELINE_MS_PER_TOKEN" || die "AR baseline artifact has an invalid ms_per_token value"
+    AR_BASELINE_RESOLVED_MS_PER_TOKEN="$AR_BASELINE_MS_PER_TOKEN"
+    EXTRA_HYDRA_OVERRIDES+=(
+        "actor_rollout_ref.model.mtp.ar_baseline_ms_per_token=$AR_BASELINE_MS_PER_TOKEN"
+    )
+fi
+
+if [[ -n "$AR_BASELINE_RESOLVED_MS_PER_TOKEN" ]]; then
+    printf 'ar_baseline_source=%s\nar_baseline_ms_per_token=%s\n' \
+        "$AR_BASELINE_SOURCE" "$AR_BASELINE_RESOLVED_MS_PER_TOKEN" >> "$RUN_DIR/config/launch.txt"
+    "$GROWMTP_PYTHON" - "$RUN_DIR/logs/metrics.jsonl" "$AR_BASELINE_RESOLVED_MS_PER_TOKEN" \
+        "$TRAIN_GPUS" <<'PY'
+import datetime
+import json
+import math
+import pathlib
+import sys
+
+metrics_path = pathlib.Path(sys.argv[1])
+ms_per_token = float(sys.argv[2])
+gpu_count = int(sys.argv[3])
+row = {
+    "timestamp_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+    "step": 0,
+    "phase": "ar_baseline",
+    "target/ms_per_generated_token": ms_per_token,
+    "perf/rollout_tokens_per_second_per_gpu": 1000.0 / (ms_per_token * gpu_count),
+}
+if not math.isfinite(ms_per_token) or ms_per_token <= 0:
+    raise SystemExit("Resolved AR baseline ms/token must be positive and finite")
+metrics_path.parent.mkdir(parents=True, exist_ok=True)
+existing = []
+if metrics_path.exists():
+    for line in metrics_path.read_text(encoding="utf-8").splitlines():
+        try:
+            existing.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+if not any(
+    item.get("phase") == "ar_baseline"
+    and item.get("target/ms_per_generated_token") == ms_per_token
+    for item in existing
+):
+    with metrics_path.open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps(row, allow_nan=False, sort_keys=True) + "\n")
+PY
+fi
+
 if (( STOP_REQUESTED )); then
     printf 'finished_utc=%s\nresult=cancelled_before_training\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> "$RUN_DIR/config/launch.txt"
     exit 0
@@ -371,7 +525,9 @@ TRAIN_COMMAND=(
     --nodes 1
     --steps "$TRAIN_STEPS"
     --response-length "$RESPONSE_LENGTH"
+    --prompt-key "$PROMPT_KEY"
     --depth 5
+    "data.max_prompt_length=$MAX_PROMPT_LENGTH"
     "actor_rollout_ref.model.lora_rank=$LORA_RANK"
     "actor_rollout_ref.model.lora_alpha=$LORA_ALPHA"
     actor_rollout_ref.model.lora.merge=true
@@ -379,6 +535,8 @@ TRAIN_COMMAND=(
     "data.train_batch_size=$TRAIN_BATCH_SIZE"
     "data.dataloader_num_workers=$DATALOADER_NUM_WORKERS"
     "actor_rollout_ref.rollout.n=$ROLLOUT_N"
+    "actor_rollout_ref.rollout.tensor_model_parallel_size=$AR_BASELINE_TP_SIZE_PER_REPLICA"
+    "actor_rollout_ref.rollout.gpu_memory_utilization=$ROLLOUT_GPU_MEMORY_UTILIZATION"
     "actor_rollout_ref.rollout.agent.num_workers=$AGENT_LOOP_WORKERS"
     "actor_rollout_ref.actor.ppo_mini_batch_size=$PPO_MINI_BATCH_SIZE"
     actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=1

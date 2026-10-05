@@ -182,6 +182,26 @@ def compute_spec_decode_metrics(
     }
 
 
+def _add_growmtp_metric_aliases(metrics):
+    """Expose policy and MTP metrics under stable target/draft namespaces."""
+    aliases = {}
+    for key, value in metrics.items():
+        if key.startswith("actor/mtp/"):
+            aliases[f"draft/{key.removeprefix('actor/mtp/')}"] = value
+        elif key.startswith("rollout/mtp/"):
+            aliases[f"draft/{key.removeprefix('rollout/mtp/')}"] = value
+        elif key.startswith("actor/"):
+            metric_name = key.removeprefix("actor/")
+            if metric_name == "grad_norm":
+                aliases["target/grad_norm_total"] = value
+            else:
+                aliases.setdefault(f"target/{metric_name}", value)
+        elif key.startswith(("val-core/", "val-aux/")):
+            aliases[f"target/{key}"] = value
+    metrics.update({key: value for key, value in aliases.items() if key not in metrics})
+    return metrics
+
+
 def compute_advantage(
     data: DataProto,
     adv_estimator: AdvantageEstimator,
@@ -1333,6 +1353,10 @@ class RayPPOTrainer:
         actor_output = rename_dict(actor_output, "actor/")
         # modify key name
         actor_output["perf/mfu/actor"] = actor_output.pop("actor/mfu")
+        if self.config.actor_rollout_ref.model.mtp.get("growmtp", False):
+            for key in list(actor_output):
+                if key.startswith("actor/target/") or key.startswith("actor/draft/"):
+                    actor_output[key.removeprefix("actor/")] = actor_output.pop(key)
         actor_output = DataProto.from_single_dict(data={}, meta_info={"metrics": actor_output})
 
         return actor_output
@@ -1420,6 +1444,8 @@ class RayPPOTrainer:
         if self.config.trainer.get("val_before_train", True):
             val_metrics = self._validate()
             assert val_metrics, f"{val_metrics=}"
+            if self.config.actor_rollout_ref.model.mtp.get("growmtp", False):
+                _add_growmtp_metric_aliases(val_metrics)
             pprint(f"Initial validation metrics: {val_metrics}")
             logger.log(data=val_metrics, step=self.global_steps)
             if self.config.trainer.get("val_only", False):
@@ -1783,8 +1809,73 @@ class RayPPOTrainer:
                 if self.config.actor_rollout_ref.model.mtp.get("growmtp", False):
                     verifies = sum(batch.non_tensor_batch.get("spec_num_verify_steps", []))
                     accepts = sum(batch.non_tensor_batch.get("spec_num_accepted_tokens", []))
+                    proposed = sum(batch.non_tensor_batch.get("spec_num_draft_tokens", []))
+                    metrics["rollout/mtp/accepted_draft_tokens"] = float(accepts)
+                    metrics["rollout/mtp/proposed_draft_tokens"] = float(proposed)
+                    metrics["rollout/mtp/verification_steps"] = float(verifies)
                     if verifies:
-                        metrics["rollout/mtp/acceptance_length"] = 1.0 + accepts / verifies
+                        acceptance_length = 1.0 + accepts / verifies
+                        metrics["rollout/mtp/acceptance_length"] = acceptance_length
+                    if proposed:
+                        metrics["rollout/mtp/acceptance_rate"] = accepts / proposed
+
+                    rollout_seconds = float(timing_raw.get("gen", 0.0))
+                    response_tokens = int(batch.batch["response_mask"].sum().item())
+                    if rollout_seconds > 0:
+                        generated_tokens_per_second_per_gpu = metrics.get(
+                            "perf/rollout_tokens_per_second_per_gpu",
+                            response_tokens / (rollout_seconds * n_gpus),
+                        )
+                        metrics["rollout/mtp/generated_tokens_per_second_per_gpu"] = (
+                            generated_tokens_per_second_per_gpu
+                        )
+                        if response_tokens > 0:
+                            mtp_ms_per_token = (
+                                rollout_seconds * 1000.0 / response_tokens
+                            )
+                            metrics["rollout/mtp/ms_per_generated_token"] = mtp_ms_per_token
+
+                        ar_baseline_ms_per_token = (
+                            self.config.actor_rollout_ref.model.mtp.get("ar_baseline_ms_per_token", None)
+                        )
+                        if ar_baseline_ms_per_token is not None:
+                            ar_baseline_ms_per_token = float(ar_baseline_ms_per_token)
+                        else:
+                            ar_baseline_tokens_per_second_per_gpu = (
+                                self.config.actor_rollout_ref.model.mtp.get(
+                                    "ar_baseline_tokens_per_second_per_gpu", None
+                                )
+                            )
+                            if ar_baseline_tokens_per_second_per_gpu is not None:
+                                ar_baseline_tokens_per_second_per_gpu = float(
+                                    ar_baseline_tokens_per_second_per_gpu
+                                )
+                                if (
+                                    not np.isfinite(ar_baseline_tokens_per_second_per_gpu)
+                                    or ar_baseline_tokens_per_second_per_gpu <= 0
+                                ):
+                                    raise ValueError(
+                                        "mtp.ar_baseline_tokens_per_second_per_gpu must be a finite positive value"
+                                    )
+                                # Throughput is normalized per GPU; convert it back to
+                                # wall-clock milliseconds/token for this same GPU count.
+                                ar_baseline_ms_per_token = 1000.0 / (
+                                    ar_baseline_tokens_per_second_per_gpu * n_gpus
+                                )
+
+                        if ar_baseline_ms_per_token is not None:
+                            if (
+                                not np.isfinite(ar_baseline_ms_per_token)
+                                or ar_baseline_ms_per_token <= 0
+                            ):
+                                raise ValueError(
+                                    "mtp.ar_baseline_ms_per_token must be a finite positive value"
+                                )
+                            metrics["target/ms_per_generated_token"] = ar_baseline_ms_per_token
+                            if response_tokens > 0:
+                                metrics["rollout/mtp/speedup_vs_ar"] = (
+                                    ar_baseline_ms_per_token / mtp_ms_per_token
+                                )
                 spec_histograms = batch.non_tensor_batch.get("spec_correct_drafts_histogram", None)
                 if spec_histograms is not None:
                     _valid_hists = [h for h in spec_histograms if h is not None and len(h) > 1]
@@ -1818,6 +1909,9 @@ class RayPPOTrainer:
                         if _per_req:
                             metrics["rollout/mtp/overall_acc_rate"] = sum(_per_req) / len(_per_req)
 
+
+                if self.config.actor_rollout_ref.model.mtp.get("growmtp", False):
+                    _add_growmtp_metric_aliases(metrics)
 
                 # TODO: make a canonical logger that supports various backend
                 logger.log(data=metrics, step=self.global_steps)

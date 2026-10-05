@@ -46,6 +46,7 @@ from verl.utils.fsdp_utils import (
     apply_fsdp2,
     collect_lora_params,
     fsdp2_clip_grad_norm_,
+    fsdp2_grad_norm,
     fsdp2_load_full_state_dict,
     fsdp_version,
     get_fsdp_wrap_policy,
@@ -709,6 +710,19 @@ class FSDPEngine(BaseEngine):
         if scaler is not None:
             scaler.unscale_(self.optimizer)
 
+        self._optimizer_step_metrics = {}
+        if self.model_config.mtp.growmtp:
+            groups = {group.get("name"): group for group in self.optimizer.param_groups}
+            for group_name, metric_prefix in (("policy", "target"), ("mtp", "draft")):
+                group = groups.get(group_name)
+                if group is None:
+                    continue
+                group_norm = fsdp2_grad_norm(group["params"])
+                self._optimizer_step_metrics[f"{metric_prefix}/grad_norm"] = group_norm.item()
+                self._optimizer_step_metrics[f"{metric_prefix}/optimizer/trainable_params"] = sum(
+                    parameter.numel() for parameter in group["params"] if parameter.requires_grad
+                )
+
         if isinstance(self.module, FSDP):
             grad_norm = self.module.clip_grad_norm_(self.optimizer_config.clip_grad)
         elif isinstance(self.module, FSDPModule):
@@ -721,6 +735,7 @@ class FSDPEngine(BaseEngine):
         if isinstance(grad_norm, DTensor):
             grad_norm = grad_norm.full_tensor()
 
+        step_skipped = not bool(torch.isfinite(grad_norm).item())
         if scaler is not None:
             # scaler handles inf/nan skipping internally via _check_inf_per_device.
             scaler.step(self.optimizer)
@@ -732,6 +747,11 @@ class FSDPEngine(BaseEngine):
                 self.optimizer.zero_grad()
             else:
                 self.optimizer.step()
+
+        if self.model_config.mtp.growmtp:
+            step_applied = 0.0 if step_skipped else 1.0
+            self._optimizer_step_metrics["target/optimizer/step_applied_fraction"] = step_applied
+            self._optimizer_step_metrics["draft/optimizer/step_applied_fraction"] = step_applied
 
         if self._qat_enabled:
             from verl.utils.qat.core import invalidate_all_scales

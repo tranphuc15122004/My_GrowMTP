@@ -96,6 +96,18 @@ def ppo_loss(config: ActorConfig, model_output, data: TensorDict, dp_group=None)
     advantages = data["advantages"]
     rollout_is_weights = data.get("rollout_is_weights", None)
 
+    policy_log_ratio = torch.clamp(log_prob - old_log_prob, min=-20.0, max=20.0)
+    policy_ratio = torch.exp(policy_log_ratio)
+    valid_policy_ratio = torch.masked_select(policy_ratio, response_mask).float()
+    if valid_policy_ratio.numel() > 0:
+        ratio_mean = valid_policy_ratio.mean()
+        metrics["actor/policy_ratio_mean"] = Metric(value=ratio_mean, aggregation=AggregationType.MEAN)
+        metrics["actor/policy_ratio_std"] = Metric(
+            value=valid_policy_ratio.std(unbiased=False), aggregation=AggregationType.MEAN
+        )
+        metrics["actor/policy_ratio_min"] = Metric(value=valid_policy_ratio.min(), aggregation=AggregationType.MIN)
+        metrics["actor/policy_ratio_max"] = Metric(value=valid_policy_ratio.max(), aggregation=AggregationType.MAX)
+
     loss_agg_mode = config.loss_agg_mode
 
     loss_mode = config.policy_loss.get("loss_mode", "vanilla")

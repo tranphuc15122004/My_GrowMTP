@@ -81,12 +81,15 @@ class LocalLogger:
 
         metrics = (
             ("reward", ("critic/rewards/mean", "critic/score/mean"), ".3f", ""),
-            ("policy", ("actor/pg_loss",), ".4f", ""),
-            ("MTP/DCA", ("actor/mtp/dca_loss",), ".3f", ""),
-            ("LR", ("actor/lr",), ".2e", ""),
+            ("policy", ("target/pg_loss", "actor/pg_loss"), ".4f", ""),
+            ("target grad", ("target/grad_norm",), ".3e", ""),
+            ("MTP/DCA", ("draft/dca_loss", "actor/mtp/dca_loss"), ".3f", ""),
+            ("draft grad", ("draft/grad_norm",), ".3e", ""),
+            ("LR", ("target/lr", "actor/lr"), ".2e", ""),
             ("speed", ("perf/throughput",), ".2f", " tok/s"),
             ("step", ("timing_s/step",), ".1f", " s"),
-            ("MTP accept", ("rollout/mtp/acceptance_length",), ".2f", ""),
+            ("MTP accept", ("draft/acceptance_length", "rollout/mtp/acceptance_length"), ".2f", ""),
+            ("MTP speedup", ("draft/speedup_vs_ar",), ".2f", "x"),
         )
         for label, keys, format_spec, suffix in metrics:
             value = self._number(data, *keys)

@@ -635,6 +635,24 @@ def fsdp2_clip_grad_norm_(parameters, max_norm, norm_type=2.0, error_if_nonfinit
     return total_norm
 
 
+def fsdp2_grad_norm(parameters, norm_type=2.0, error_if_nonfinite=False, foreach=None):
+    """Return the global norm of FSDP2 gradients without modifying them."""
+    from torch.nn.utils.clip_grad import _get_total_norm
+
+    if isinstance(parameters, torch.Tensor):
+        parameters = [parameters]
+    else:
+        parameters = list(parameters)
+    grads = [parameter.grad for parameter in parameters if parameter.grad is not None]
+    if not grads:
+        return torch.zeros((), device=get_device_id())
+
+    total_norm = _get_total_norm(grads, norm_type, error_if_nonfinite, foreach)
+    if hasattr(total_norm, "full_tensor"):
+        total_norm = total_norm.full_tensor()
+    return total_norm.to(get_device_id(), non_blocking=True)
+
+
 def layered_summon_lora_params(fsdp_module) -> OrderedDict:
     from peft.utils.save_and_load import get_peft_model_state_dict
 

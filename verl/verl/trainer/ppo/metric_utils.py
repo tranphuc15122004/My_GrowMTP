@@ -336,14 +336,22 @@ def compute_throughout_metrics(batch: DataProto, timing_raw: dict[str, float], n
     """
     total_num_tokens = sum(batch.meta_info["global_token_num"])
     time = timing_raw["step"]
+    response_tokens = int(batch.batch["response_mask"].sum().item())
     # estimated_flops, promised_flops = flops_function.estimate_flops(num_tokens, time)
     # f'Actual TFLOPs/s/GPU​': estimated_flops/(n_gpus),
     # f'Theoretical TFLOPs/s/GPU​': promised_flops,
-    return {
+    metrics = {
         "perf/total_num_tokens": total_num_tokens,
+        "perf/num_response_tokens": response_tokens,
         "perf/time_per_step": time,
         "perf/throughput": total_num_tokens / (time * n_gpus),
     }
+    gen_time = timing_raw.get("gen", 0.0)
+    if gen_time > 0:
+        metrics["perf/rollout_tokens_per_second_per_gpu"] = response_tokens / (gen_time * n_gpus)
+        if response_tokens > 0:
+            metrics["perf/rollout_ms_per_token"] = gen_time * 1000.0 / response_tokens
+    return metrics
 
 
 def compute_variance_proxy_metrics(batch: DataProto, gradient_norm: float = None) -> dict[str, float]:

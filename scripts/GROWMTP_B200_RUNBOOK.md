@@ -2,17 +2,19 @@
 
 ## Start a run
 
-A launch without `RUN_DIR` creates a timestamped, isolated folder under `RUN_BASE_DIR`. The B200 launcher defaults to a one-step smoke run; use `RUN_MODE=full` for the 500-step preset.
+A launch without `RUN_DIR` creates a timestamped, isolated folder under `RUN_BASE_DIR`. The server wrapper defaults to the 500-step `full` preset and GPUs `0,1`.
 
 ```bash
-RUN_MODE=full LOG_LEVEL=compact bash scripts/run_b200_growmtp_lora.sh
+GPU_IDS=0,1 RUN_MODE=full LOG_LEVEL=compact bash scripts/run_b200_growmtp_lora_server.sh
 ```
 
-On the configured server, use its wrapper to select the server model and validation dataset:
+Set `GPU_IDS` to the physical GPU indices to use. The launcher checks that each selected card is a B200 with about 180 GB of memory, sets `CUDA_VISIBLE_DEVICES`, and derives `TRAIN_GPUS` from the list. For example, to use four cards:
 
 ```bash
-RUN_MODE=smoke LOG_LEVEL=compact bash scripts/run_b200_growmtp_lora_server.sh
+GPU_IDS=0,1,2,3 RUN_MODE=full LOG_LEVEL=compact bash scripts/run_b200_growmtp_lora_server.sh
 ```
+
+Use `RUN_MODE=smoke` for a one-step launch check or `RUN_MODE=pilot` for three steps. The full B200 preset scales the training batch to 8 per GPU, uses rollout `n=4`, caps agent-loop workers at 72, and scales the rollout token budget with GPU count. It defaults to a 1024-token prompt limit, 4096-token response limit, and 0.6 SGLang GPU memory utilization; the latter leaves room for the co-located trainer. Override any setting through its matching environment variable, such as `ROLLOUT_GPU_MEMORY_UTILIZATION=0.65` or `TRAIN_BATCH_SIZE=32`.
 
 After the trainer import check passes once for the same Python environment, set SKIP_TRAINING_IMPORT_PREFLIGHT=1 on a retry. This skips only the import probe; the GrowMTP/SGLang dependency check still runs.
 
@@ -25,6 +27,7 @@ RUN_DIR/
   prepared_model/          # base model plus the seeded GrowMTP head
   checkpoints/             # resumable trainer state and stop markers
   logs/
+    ar_baseline.log        # AR-only SGLang benchmark output
     launcher.log           # preflight and concise launcher output
     ray-*/                 # Ray session logs copied after a trainer failure
     training.log           # timestamped full trainer stdout and stderr
@@ -34,6 +37,7 @@ RUN_DIR/
     resume.sh               # exact command and environment to resume this run
     resolved_config-*.yaml   # resolved Hydra configuration per trainer start
   artifacts/
+    ar_baseline.json       # automatic AR measurement, when enabled
     profiling/              # profiler output when profiling is enabled
     rollouts/               # optional rollout generations
     validation/             # optional validation generations
@@ -55,7 +59,11 @@ Ray uses a short per-process path under /tmp by default to stay below the Unix s
 - `normal`: all trainer output, including the full scalar metric line for each step.
 - `debug`: all trainer output plus the complete resolved configuration.
 
-Every scalar metric is also appended to `logs/metrics.jsonl`; complete trainer stdout and stderr go to `logs/training.log` at every level. The common launcher writes its preflight checks and status messages to `logs/launcher.log`. The server wrapper runs its initial dependency/import preflight before the run directory is opened, so that initial output appears in the terminal; later launcher output is saved. Logs and metrics append when the run resumes.
+Every scalar metric is also appended to `logs/metrics.jsonl`; complete trainer stdout and stderr go to `logs/training.log` at every level. Before training, the launcher runs a short AR-only SGLang benchmark on the same visible GPUs, prompt source, prompt/response limits, and rollout parallelism. Its detailed result is stored in `artifacts/ar_baseline.json` and its console output in `logs/ar_baseline.log`; the target ms/token baseline is also written as a `phase=ar_baseline` row in `logs/metrics.jsonl`. The baseline is measured from the initial prepared target model once per run and reused after resume. The common launcher writes its preflight checks and status messages to `logs/launcher.log`. The server wrapper runs its initial dependency/import preflight before the run directory is opened, so that initial output appears in the terminal; later launcher output is saved. Logs and metrics append when the run resumes.
+
+GrowMTP runs retain the existing `actor/*` and `actor/mtp/*` metric keys for compatibility and also emit `target/*` aliases for the PPO policy and `draft/*` aliases for the MTP head. Target policy ratio mean/std/min/max, target and draft gradient norms, trainable parameter counts, optimizer step-applied fractions, validation metrics, and target/draft learning rates are available in `metrics.jsonl`. `actor/grad_norm` remains the norm across all trainable model parameters; use `target/grad_norm` and `draft/grad_norm` to inspect each optimizer group separately.
+
+GrowMTP rollout metrics include `draft/acceptance_length`, accepted/proposed draft-token counts, verification-step count, acceptance rate, generated tokens/s/GPU, and milliseconds per generated token. The speedup is `target/ms_per_generated_token ÷ draft/ms_per_generated_token`; the AR numerator is measured automatically before training, while the speculative denominator is measured at every GrowMTP rollout step. To reuse a previously measured scalar baseline, set `AR_BASELINE_MS_PER_TOKEN`; `AR_BASELINE_TOKENS_PER_SECOND_PER_GPU` remains available for compatibility. Set `AR_BASELINE_AUTO=0` to skip automatic measurement; without a supplied baseline, the speedup metric is omitted. `AR_BASELINE_REQUESTS` and `AR_BASELINE_REPEATS` control benchmark size; defaults match the configured rollout request count and use two timed repeats. The automatic AR baseline is anchored to the initial target checkpoint and reused on resume, so the per-step speedup curve compares each GrowMTP step against that same reference.
 
 ## Stop and resume
 
@@ -65,7 +73,7 @@ Press Ctrl-C or send SIGTERM to the launcher to request a safe stop. The launche
 bash /path/to/RUN_DIR/config/resume.sh
 ```
 
-That script restores the run's paths, model and data settings, LoRA options, log level, and Hydra overrides. For an isolated run, passing `RUN_DIR` directly cannot resume it; the launcher requires `config/resume.sh` so current shell defaults cannot silently change the saved configuration. A fresh launch without `RUN_DIR` always creates a separate run folder. The run lock prevents a second launcher from using an active `RUN_DIR`.
+That script restores the run's paths, selected physical `GPU_IDS`, GPU count, model and data settings, LoRA options, log level, and Hydra overrides. Make sure the same GPU indices are available on the server. For an isolated run, passing `RUN_DIR` directly cannot resume it; the launcher requires `config/resume.sh` so current shell defaults cannot silently change the saved configuration. A fresh launch without `RUN_DIR` always creates a separate run folder. The run lock prevents a second launcher from using an active `RUN_DIR`.
 
 ## Validation
 

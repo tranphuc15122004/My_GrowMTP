@@ -83,6 +83,8 @@ class MtpConfig(BaseConfig):
     vocab_chunk_size: int = 256
     teacher_topk: int = 64
     enable_rollout: bool = False
+    ar_baseline_ms_per_token: Optional[float] = None
+    ar_baseline_tokens_per_second_per_gpu: Optional[float] = None
 
     detach_encoder: bool = False
     mtp_loss_scaling_factor: float = 0.1
