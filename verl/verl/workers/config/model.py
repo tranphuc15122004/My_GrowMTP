@@ -85,6 +85,12 @@ class MtpConfig(BaseConfig):
     enable_rollout: bool = False
     ar_baseline_ms_per_token: Optional[float] = None
     ar_baseline_tokens_per_second_per_gpu: Optional[float] = None
+    comparison_probe_frequency: int = 0
+    # Diagnostic limits only; refresh ranks full trajectories on every recorded cycle.
+    comparison_probe_max_cycles: int = 4
+    comparison_probe_max_context: int = 1024
+    comparison_refresh_fraction: float = 0.25
+    comparison_log_trajectories: bool = True
 
     detach_encoder: bool = False
     mtp_loss_scaling_factor: float = 0.1

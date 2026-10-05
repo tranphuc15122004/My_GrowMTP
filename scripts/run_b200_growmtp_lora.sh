@@ -22,6 +22,11 @@ GPU_IDS="${GPU_IDS:-}"
 DATALOADER_NUM_WORKERS="${DATALOADER_NUM_WORKERS:-0}"
 LOG_LEVEL="${LOG_LEVEL:-compact}"
 SAVE_GENERATIONS="${SAVE_GENERATIONS:-0}"
+# Bounded distribution probes replay complete prefixes up to this context cap.
+MTP_PROBE_MAX_CYCLES="${MTP_PROBE_MAX_CYCLES:-4}"
+MTP_PROBE_MAX_CONTEXT="${MTP_PROBE_MAX_CONTEXT:-1024}"
+MTP_REFRESH_FRACTION="${MTP_REFRESH_FRACTION:-0.25}"
+COMPARISON_LOG_TRAJECTORIES="${COMPARISON_LOG_TRAJECTORIES:-1}"
 # Keep PEFT training, but merge the adapter into rollout weights because
 # SGLang's dynamic-LoRA path rejects GrowMTP's EAGLE speculative decoding.
 LORA_RANK="${LORA_RANK:-16}"
@@ -266,6 +271,10 @@ case "$RUN_MODE" in
         MAX_TOKEN_LEN_PER_GPU="${MAX_TOKEN_LEN_PER_GPU:-8192}"
         SAVE_FREQ="${SAVE_FREQ:-1}"
         TEST_FREQ="${TEST_FREQ:--1}"
+        MTP_PROBE_FREQ="${MTP_PROBE_FREQ:-0}"
+        FINAL_VALIDATION="${FINAL_VALIDATION:-0}"
+        VAL_BEFORE_TRAIN="${VAL_BEFORE_TRAIN:-0}"
+        VAL_SAMPLES="${VAL_SAMPLES:-1}"
         ;;
     pilot)
         TRAIN_STEPS="${TRAIN_STEPS:-3}"
@@ -278,6 +287,10 @@ case "$RUN_MODE" in
         MAX_TOKEN_LEN_PER_GPU="${MAX_TOKEN_LEN_PER_GPU:-8192}"
         SAVE_FREQ="${SAVE_FREQ:-1}"
         TEST_FREQ="${TEST_FREQ:--1}"
+        MTP_PROBE_FREQ="${MTP_PROBE_FREQ:-0}"
+        FINAL_VALIDATION="${FINAL_VALIDATION:-0}"
+        VAL_BEFORE_TRAIN="${VAL_BEFORE_TRAIN:-0}"
+        VAL_SAMPLES="${VAL_SAMPLES:-1}"
         ;;
     full)
         TRAIN_STEPS="${TRAIN_STEPS:-500}"
@@ -292,6 +305,10 @@ case "$RUN_MODE" in
         MAX_TOKEN_LEN_PER_GPU="${MAX_TOKEN_LEN_PER_GPU:-16384}"
         SAVE_FREQ="${SAVE_FREQ:-10}"
         TEST_FREQ="${TEST_FREQ:-$FULL_TEST_FREQ}"
+        MTP_PROBE_FREQ="${MTP_PROBE_FREQ:-4}"
+        FINAL_VALIDATION="${FINAL_VALIDATION:-1}"
+        VAL_BEFORE_TRAIN="${VAL_BEFORE_TRAIN:-1}"
+        VAL_SAMPLES="${VAL_SAMPLES:-16}"
         ;;
     *)
         die "RUN_MODE must be 'smoke', 'pilot', or 'full'"
@@ -304,13 +321,26 @@ fi
 
 for setting in TRAIN_STEPS RESPONSE_LENGTH TRAIN_BATCH_SIZE ROLLOUT_N AGENT_LOOP_WORKERS \
     PPO_MINI_BATCH_SIZE MAX_BATCHED_TOKENS MAX_TOKEN_LEN_PER_GPU SAVE_FREQ MAX_PROMPT_LENGTH \
-    AR_BASELINE_REQUESTS AR_BASELINE_REPEATS AR_BASELINE_TP_SIZE_PER_REPLICA; do
+    AR_BASELINE_REQUESTS AR_BASELINE_REPEATS AR_BASELINE_TP_SIZE_PER_REPLICA \
+    MTP_PROBE_MAX_CYCLES MTP_PROBE_MAX_CONTEXT VAL_SAMPLES; do
     [[ "${!setting}" =~ ^[1-9][0-9]*$ ]] || die "$setting must be a positive integer"
 done
+[[ "$MTP_PROBE_FREQ" =~ ^[0-9]+$ ]] || die "MTP_PROBE_FREQ must be a non-negative integer"
+for setting in FINAL_VALIDATION VAL_BEFORE_TRAIN COMPARISON_LOG_TRAJECTORIES; do
+    [[ "${!setting}" == 0 || "${!setting}" == 1 ]] || die "$setting must be 0 or 1"
+done
+FINAL_VALIDATION_HYDRA=false
+[[ "$FINAL_VALIDATION" == 0 ]] || FINAL_VALIDATION_HYDRA=true
+VAL_BEFORE_TRAIN_HYDRA=false
+[[ "$VAL_BEFORE_TRAIN" == 0 ]] || VAL_BEFORE_TRAIN_HYDRA=true
+COMPARISON_LOG_TRAJECTORIES_HYDRA=false
+[[ "$COMPARISON_LOG_TRAJECTORIES" == 0 ]] || COMPARISON_LOG_TRAJECTORIES_HYDRA=true
 (( TRAIN_GPUS % AR_BASELINE_TP_SIZE_PER_REPLICA == 0 )) || \
     die "TRAIN_GPUS must be divisible by AR_BASELINE_TP_SIZE_PER_REPLICA"
 "$GROWMTP_PYTHON" -c 'import math, sys; value=float(sys.argv[1]); sys.exit(0 if math.isfinite(value) and 0 < value < 1 else 1)' \
     "$ROLLOUT_GPU_MEMORY_UTILIZATION" || die "ROLLOUT_GPU_MEMORY_UTILIZATION must be between 0 and 1"
+"$GROWMTP_PYTHON" -c 'import math, sys; value=float(sys.argv[1]); sys.exit(0 if math.isfinite(value) and 0 <= value <= 1 else 1)' \
+    "$MTP_REFRESH_FRACTION" || die "MTP_REFRESH_FRACTION must be between 0 and 1"
 [[ "$TEST_FREQ" == "-1" || "$TEST_FREQ" =~ ^[1-9][0-9]*$ ]] || \
     die "TEST_FREQ must be -1 or a positive integer"
 (( PPO_MINI_BATCH_SIZE <= TRAIN_BATCH_SIZE * ROLLOUT_N )) || \
@@ -329,6 +359,9 @@ write_resume_config() {
             TARGET_MODULES_JSON FULL_TEST_FREQ REQUIRE_B200 ATTN_IMPLEMENTATION TRAIN_STEPS \
             RESPONSE_LENGTH TRAIN_BATCH_SIZE ROLLOUT_N AGENT_LOOP_WORKERS PPO_MINI_BATCH_SIZE \
             MAX_BATCHED_TOKENS MAX_TOKEN_LEN_PER_GPU SAVE_FREQ TEST_FREQ \
+            MTP_PROBE_FREQ MTP_PROBE_MAX_CYCLES MTP_PROBE_MAX_CONTEXT COMPARISON_LOG_TRAJECTORIES \
+            MTP_REFRESH_FRACTION \
+            FINAL_VALIDATION VAL_BEFORE_TRAIN VAL_SAMPLES \
             MAX_PROMPT_LENGTH ROLLOUT_GPU_MEMORY_UTILIZATION \
             AR_BASELINE_MS_PER_TOKEN AR_BASELINE_TOKENS_PER_SECOND_PER_GPU AR_BASELINE_AUTO \
             AR_BASELINE_REQUESTS AR_BASELINE_REPEATS AR_BASELINE_TP_SIZE_PER_REPLICA \
@@ -374,7 +407,16 @@ printf '%s\n' \
     "rollout_n=$ROLLOUT_N" \
     "dataloader_workers=$DATALOADER_NUM_WORKERS" \
     "save_freq=$SAVE_FREQ" \
+    "test_freq=$TEST_FREQ" \
     "save_generations=$SAVE_GENERATIONS" \
+    "mtp_probe_freq=$MTP_PROBE_FREQ" \
+    "mtp_probe_max_cycles=$MTP_PROBE_MAX_CYCLES" \
+    "mtp_probe_max_context=$MTP_PROBE_MAX_CONTEXT" \
+    "mtp_refresh_fraction=$MTP_REFRESH_FRACTION" \
+    "comparison_log_trajectories=$COMPARISON_LOG_TRAJECTORIES" \
+    "final_validation=$FINAL_VALIDATION" \
+    "val_before_train=$VAL_BEFORE_TRAIN" \
+    "val_samples=$VAL_SAMPLES" \
     "lora_rank=$LORA_RANK" \
     "lora_alpha=$LORA_ALPHA" \
     "target_modules=$TARGET_MODULES_JSON" \
@@ -395,6 +437,10 @@ printf '│ Mode        %s (%s steps)\n' "$RUN_MODE" "$TRAIN_STEPS"
 printf '│ GPU IDs     %s\n' "${GPU_IDS:-CUDA_VISIBLE_DEVICES}"
 printf '│ Train GPUs  %s\n' "$TRAIN_GPUS"
 printf '│ LoRA        rank %s · alpha %s · targets %s\n' "$LORA_RANK" "$LORA_ALPHA" "$TARGET_MODULES_JSON"
+printf '│ Comparison  probe freq %s · cycles %s · context %s · records %s\n' \
+    "$MTP_PROBE_FREQ" "$MTP_PROBE_MAX_CYCLES" "$MTP_PROBE_MAX_CONTEXT" "$COMPARISON_LOG_TRAJECTORIES"
+printf '│ Validation  before %s · final %s · samples %s · periodic %s\n' \
+    "$VAL_BEFORE_TRAIN" "$FINAL_VALIDATION" "$VAL_SAMPLES" "$TEST_FREQ"
 printf '│ Run folder  %s\n' "$RUN_DIR"
 printf '│ Console     %s\n' "$LOG_LEVEL"
 printf '│ Full log    %s\n' "$TRAIN_LOG"
@@ -544,7 +590,14 @@ TRAIN_COMMAND=(
     "actor_rollout_ref.ref.log_prob_max_token_len_per_gpu=$MAX_TOKEN_LEN_PER_GPU"
     "actor_rollout_ref.rollout.log_prob_max_token_len_per_gpu=$MAX_TOKEN_LEN_PER_GPU"
     "actor_rollout_ref.rollout.max_num_batched_tokens=$MAX_BATCHED_TOKENS"
-    actor_rollout_ref.rollout.val_kwargs.n=1
+    "actor_rollout_ref.rollout.val_kwargs.n=$VAL_SAMPLES"
+    "++actor_rollout_ref.model.mtp.comparison_probe_frequency=$MTP_PROBE_FREQ"
+    "++actor_rollout_ref.model.mtp.comparison_probe_max_cycles=$MTP_PROBE_MAX_CYCLES"
+    "++actor_rollout_ref.model.mtp.comparison_probe_max_context=$MTP_PROBE_MAX_CONTEXT"
+    "++actor_rollout_ref.model.mtp.comparison_refresh_fraction=$MTP_REFRESH_FRACTION"
+    "++actor_rollout_ref.model.mtp.comparison_log_trajectories=$COMPARISON_LOG_TRAJECTORIES_HYDRA"
+    "++trainer.final_validation=$FINAL_VALIDATION_HYDRA"
+    "trainer.val_before_train=$VAL_BEFORE_TRAIN_HYDRA"
     "trainer.save_freq=$SAVE_FREQ"
     "trainer.test_freq=$TEST_FREQ"
     "trainer.resume_mode=$RESUME_MODE"

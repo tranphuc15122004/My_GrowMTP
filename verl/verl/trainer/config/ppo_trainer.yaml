@@ -173,6 +173,9 @@ trainer:
   # Validation frequency (in training iterations)
   test_freq: -1
 
+  # Run a final held-out evaluation even when periodic validation is disabled.
+  final_validation: False
+
   # Number of iterations to warm up the critic before updating policy
   critic_warmup: 0
 

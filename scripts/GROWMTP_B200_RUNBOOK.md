@@ -41,6 +41,10 @@ RUN_DIR/
     profiling/              # profiler output when profiling is enabled
     rollouts/               # optional rollout generations
     validation/             # optional validation generations
+    comparison/
+      trajectories/         # per-step advantage/reward/acceptance JSONL
+      probes/               # sampled policy-shift and acceptance-surrogate JSONL
+      shifts/               # full trajectory scores and refresh decisions
   runtime/                  # launcher support state
   .run.lock                 # prevents simultaneous launchers using the same run
 ```
@@ -64,6 +68,12 @@ Every scalar metric is also appended to `logs/metrics.jsonl`; complete trainer s
 GrowMTP runs retain the existing `actor/*` and `actor/mtp/*` metric keys for compatibility and also emit `target/*` aliases for the PPO policy and `draft/*` aliases for the MTP head. Target policy ratio mean/std/min/max, target and draft gradient norms, trainable parameter counts, optimizer step-applied fractions, validation metrics, and target/draft learning rates are available in `metrics.jsonl`. `actor/grad_norm` remains the norm across all trainable model parameters; use `target/grad_norm` and `draft/grad_norm` to inspect each optimizer group separately.
 
 GrowMTP rollout metrics include `draft/acceptance_length`, accepted/proposed draft-token counts, verification-step count, acceptance rate, generated tokens/s/GPU, and milliseconds per generated token. The speedup is `target/ms_per_generated_token ÷ draft/ms_per_generated_token`; the AR numerator is measured automatically before training, while the speculative denominator is measured at every GrowMTP rollout step. To reuse a previously measured scalar baseline, set `AR_BASELINE_MS_PER_TOKEN`; `AR_BASELINE_TOKENS_PER_SECOND_PER_GPU` remains available for compatibility. Set `AR_BASELINE_AUTO=0` to skip automatic measurement; without a supplied baseline, the speedup metric is omitted. `AR_BASELINE_REQUESTS` and `AR_BASELINE_REPEATS` control benchmark size; defaults match the configured rollout request count and use two timed repeats. The automatic AR baseline is anchored to the initial target checkpoint and reused on resume, so the per-step speedup curve compares each GrowMTP step against that same reference.
+
+## Comparison metrics
+
+The full preset records comparison diagnostics and applies selective future-policy draft refresh every four steps, then runs initial/final validation with 16 samples per prompt. Periodic validation remains disabled by default. `MTP_PROBE_FREQ`, `MTP_PROBE_MAX_CYCLES`, `MTP_PROBE_MAX_CONTEXT`, `MTP_REFRESH_FRACTION`, `COMPARISON_LOG_TRAJECTORIES`, `VAL_BEFORE_TRAIN`, `FINAL_VALIDATION`, and `VAL_SAMPLES` control this behavior and are preserved on resume. Smoke/pilot presets disable probing and refresh unless explicitly enabled. See [metric definitions and comparison commands](GROWMTP_COMPARISON_METRICS.md); comparison artifacts do not require `SAVE_GENERATIONS=1`.
+
+Probe cycle/context budgets bound diagnostic samples only. Refresh scores every recorded cycle of positive-advantage trajectories, selects the top fraction across eligible trajectories, and runs one mixed-teacher head update after PPO. Exact full-vocabulary detection uses a temporary FP32 cache on DP rank zero; its disk space and verifier cost scale with recorded positions and vocabulary size. Measure `draft/refresh/time_s`, `draft/shift/cache_bytes`, and E2E before running a long comparison.
 
 ## Stop and resume
 

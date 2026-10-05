@@ -17,7 +17,9 @@ The concrete Engine implementation using PyTorch FullyShardedDataParallel (FSDP)
 
 import gc
 import logging
+import math
 import os
+import time
 import warnings
 from contextlib import nullcontext
 from typing import Callable, ContextManager, Optional
@@ -651,7 +653,8 @@ class FSDPEngine(BaseEngine):
         )
 
         mtp_cycles = 0
-        if self.model_config.mtp.growmtp and not forward_only:
+        train_head = self.model_config.mtp.growmtp and not tu.get(data, "mtp_defer_head_update", default=False)
+        if train_head and not forward_only:
             local_cycles = data["mtp_num_cycles"].sum().to(get_device_id()) if "mtp_num_cycles" in data else torch.zeros((), device=get_device_id())
             torch.distributed.all_reduce(local_cycles, group=self.get_data_parallel_group())
             mtp_cycles = int(local_cycles.item())
@@ -672,10 +675,18 @@ class FSDPEngine(BaseEngine):
                         scaler.scale(loss).backward()
                     else:
                         loss.backward()
-                    if self.model_config.mtp.growmtp:
+                    if train_head:
                         from verl.trainer.mtp.engine import backward_head
+                        if torch.cuda.is_available():
+                            torch.cuda.synchronize()
+                        head_started = time.perf_counter()
                         metrics = backward_head(self.module, micro_batch, self.model_config.mtp,
                                                 mtp_cycles, self.get_data_parallel_size())
+                        if torch.cuda.is_available():
+                            torch.cuda.synchronize()
+                        self._mtp_update_seconds = getattr(self, "_mtp_update_seconds", 0.0) + (
+                            time.perf_counter() - head_started
+                        )
                         metrics["mtp/lr"] = self.optimizer.param_groups[1]["lr"]
                         meta_info["metrics"].update(metrics)
 
@@ -683,6 +694,182 @@ class FSDPEngine(BaseEngine):
 
         # postprocess and return
         return postprocess_batch_func(output_lst=output_lst, indices=indices, data=data)
+
+    def capture_comparison_probe(self, data, step):
+        """Snapshot diagnostics and, on refresh steps, every eligible trajectory."""
+        from verl.trainer.mtp.probe import evaluate_cases, select_cases, synchronized_cases
+
+        if self.ulysses_sequence_parallel_size != 1 or isinstance(self.module, FSDP):
+            raise ValueError("GrowMTP comparison probe requires FSDP2 with sequence parallel size 1")
+        config = self.model_config.mtp
+        fraction = float(config.comparison_refresh_fraction)
+        if not math.isfinite(fraction) or not 0 <= fraction <= 1:
+            raise ValueError("comparison_refresh_fraction must be in [0, 1]")
+        if config.comparison_probe_max_cycles <= 0 or config.comparison_probe_max_context <= 0:
+            raise ValueError("Comparison probe budgets must be positive")
+        records = []
+        counts = data["mtp_num_cycles"].detach().cpu().tolist()
+        fields = {
+            key: data["mtp_" + key].unbind()
+            for key in ("prefix_ids", "position", "draft_tokens", "accept_len")
+        } if any(counts) else {}
+        target_ids = data["input_ids"].unbind()
+        skipped_nonfinite = 0
+        for i, count in enumerate(counts):
+            if count:
+                advantage = float(data["comparison_advantage"][i])
+                score = float(data["comparison_score"][i])
+                if not math.isfinite(advantage) or not math.isfinite(score):
+                    skipped_nonfinite += count
+                    continue
+                records.append({
+                    **{key: value[i] for key, value in fields.items()},
+                    "target_ids": target_ids[i],
+                    "trajectory_index": int(data["comparison_request_index"][i]),
+                    "source_rank": torch.distributed.get_rank(),
+                    "advantage": advantage,
+                    "score": score,
+                })
+        eligible = sum(int((record["position"].detach().cpu() + record["draft_tokens"].shape[-1]
+                            <= config.comparison_probe_max_context).sum()) for record in records)
+        coverage_values = torch.tensor([sum(counts), eligible, skipped_nonfinite], dtype=torch.long,
+                                       device=next(self.module.parameters()).device)
+        if torch.distributed.is_initialized():
+            torch.distributed.all_reduce(coverage_values, group=self.get_data_parallel_group())
+        recorded, eligible, skipped_nonfinite = coverage_values.tolist()
+        coverage = {"draft/probe/recorded_cycles": float(recorded),
+                    "draft/probe/eligible_cycles": float(eligible),
+                    "draft/probe/skipped_nonfinite_cycles": float(skipped_nonfinite),
+                    "draft/probe/skipped_context_cycles": float(recorded - eligible - skipped_nonfinite)}
+        cases = select_cases(records, config.comparison_probe_max_cycles,
+                             config.comparison_probe_max_context, seed=step + self.get_data_parallel_rank())
+        cases = synchronized_cases(cases, config.comparison_probe_max_cycles,
+                                   group=self.get_data_parallel_group())
+        snapshot = {"cases": cases, "step": step, "coverage": coverage, "defer_head_update": fraction > 0}
+        if cases:
+            temperature = float(tu.get(data, "temperature"))
+            old_target, fixed_draft = evaluate_cases(self.module, cases, temperature)
+            snapshot.update(old_target=old_target, fixed_draft=fixed_draft, temperature=temperature)
+        if fraction > 0:
+            from verl.trainer.mtp.refresh import capture_shift, gather_trajectories
+
+            started = time.perf_counter()
+            all_records, batch_size, cycles = gather_trajectories(records, data, self.get_data_parallel_group())
+            shift = capture_shift(self.module, all_records, source=self.get_data_parallel_rank() == 0)
+            snapshot.update(shift=shift, records=all_records, data=data, global_trajectories=batch_size,
+                            global_cycles=cycles, fraction=fraction,
+                            shift_capture_seconds=time.perf_counter() - started,
+                            draft_lr=next(group["lr"] for group in self.optimizer.param_groups
+                                          if group.get("name") == "mtp"))
+        return snapshot
+
+    def finish_comparison_probe(self, snapshot, output_dir=None):
+        """Measure the updated target/head on the exact same conditioning paths."""
+        from verl.trainer.mtp.probe import compare_distributions, evaluate_cases, write_probe_rows
+
+        metrics = {**snapshot["coverage"], "draft/probe/num_cycles": 0.0,
+                   "draft/probe/num_positions": 0.0, "draft/refresh/selected_count": 0.0,
+                   "draft/refresh/applied": 0.0, "draft/refresh/updated_cycles": 0.0}
+        selected_keys, shift, scores = set(), {}, {}
+        if snapshot.get("defer_head_update"):
+            from verl.trainer.mtp.refresh import (
+                mixed_teacher_batch, score_shift, select_trajectories, trajectory_key,
+            )
+
+            started = time.perf_counter()
+            shift = score_shift(self.module, snapshot["records"], snapshot["shift"], self.get_data_parallel_group())
+            selected, scores = select_trajectories(snapshot["records"], shift, snapshot["fraction"])
+            selected_keys = {trajectory_key(row) for row in selected}
+            batch = mixed_teacher_batch(self.module, snapshot["data"], selected,
+                                        torch.distributed.get_rank(), self.model_config.mtp.teacher_topk)
+            selected_cycles = sum(row["position"].numel() for row in selected)
+            metrics.update(self.refresh_draft_teacher(
+                batch, snapshot["global_cycles"], snapshot["global_trajectories"],
+                selected_cycles, snapshot["draft_lr"],
+            ))
+            count = len(snapshot["records"])
+            metrics.update({
+                "draft/refresh/candidate_count": float(count),
+                "draft/refresh/selected_count": float(len(selected)),
+                "draft/refresh/selected_fraction": len(selected) / max(1, count),
+                "draft/refresh/score_mean": sum(scores.values()) / max(1, count),
+                "draft/refresh/score_max": max(scores.values(), default=0.0),
+                "draft/refresh/batch_trajectories": float(snapshot["global_trajectories"]),
+                "draft/shift/kl_new_old_mean": sum(shift.values()) / max(1, len(snapshot["shift"]["positive"])),
+                "draft/shift/measured_trajectories": float(len(snapshot["shift"]["positive"])),
+                "draft/shift/num_positions": float(snapshot["shift"]["num_positions"]),
+                "draft/shift/cache_bytes": float(snapshot["shift"]["cache_bytes"]),
+                "draft/shift/target_temperature": 1.0,
+                "draft/refresh/time_s": snapshot["shift_capture_seconds"] + time.perf_counter() - started,
+            })
+            if output_dir and self.get_data_parallel_rank() == 0:
+                from pathlib import Path
+                from verl.trainer.mtp.probe import write_trajectory_rows
+
+                write_trajectory_rows(Path(output_dir).parent / "shifts", snapshot["step"], [{
+                    "source_rank": record["source_rank"], "trajectory_index": record["trajectory_index"],
+                    "advantage": record["advantage"], "score": record["score"],
+                    "num_cycles": record["position"].numel(), "kl_measured": record["advantage"] > 0,
+                    "kl_new_old_mean": shift[trajectory_key(record)] if record["advantage"] > 0 else None,
+                    "positive_advantage_kl_score": scores[trajectory_key(record)],
+                    "refresh_selected": trajectory_key(record) in selected_keys,
+                    "refresh_applied": bool(metrics["draft/refresh/applied"] and trajectory_key(record) in selected_keys),
+                } for record in snapshot["records"]])
+        if not snapshot["cases"]:
+            return metrics
+        new_target, updated_draft = evaluate_cases(self.module, snapshot["cases"], snapshot["temperature"])
+        probe_metrics, rows = compare_distributions(snapshot["old_target"], new_target,
+                                                   snapshot["fixed_draft"], updated_draft)
+        metrics.update(probe_metrics)
+        metrics["draft/probe/target_temperature"] = snapshot["temperature"]
+        metrics["draft/probe/unfiltered_target"] = 1.0
+        for case, row in zip(snapshot["cases"], rows, strict=True):
+            key = (case["source_rank"], case["trajectory_index"])
+            row["refresh_selected"] = key in selected_keys
+            if key in scores:
+                row["positive_advantage_kl_score"] = scores[key]
+                row["trajectory_kl_new_old_mean"] = shift[key] if case["advantage"] > 0 else None
+        if self.get_data_parallel_rank() == 0:
+            write_probe_rows(output_dir, snapshot["step"], snapshot["cases"], rows)
+        return metrics
+
+    def refresh_draft_teacher(self, batch, global_cycles, global_trajectories, selected_cycles, draft_lr):
+        """One head-only step on the full batch with selected new and unselected old teachers."""
+        from verl.trainer.mtp.engine import backward_head
+
+        config = self.model_config.mtp
+        dp_size = self.get_data_parallel_size()
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        started = time.perf_counter()
+        self.optimizer.zero_grad()
+        mtp_group = next(group for group in self.optimizer.param_groups if group.get("name") == "mtp")
+        scheduled_lr = mtp_group["lr"]
+        mtp_group["lr"] = draft_lr
+        try:
+            head_metrics = backward_head(self.module, batch, config, global_cycles, dp_size,
+                                         global_trajectories=global_trajectories)
+            grad_norm = self.optimizer_step() if global_cycles else 0.0
+            applied = self._optimizer_step_metrics["draft/optimizer/step_applied_fraction"] if global_cycles else 0.0
+        finally:
+            mtp_group["lr"] = scheduled_lr
+            self.optimizer.zero_grad()
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
+        elapsed = time.perf_counter() - started
+        self._mtp_update_seconds = getattr(self, "_mtp_update_seconds", 0.0) + elapsed
+        return {
+            **head_metrics,
+            "mtp/lr": draft_lr,
+            "draft/optimizer/step_applied_fraction": applied,
+            "draft/refresh/head_step_applied": applied,
+            "draft/refresh/applied": applied if selected_cycles else 0.0,
+            "draft/refresh/updated_cycles": float(selected_cycles) * applied,
+            "draft/refresh/dca_loss": head_metrics["mtp/dca_loss"],
+            "draft/refresh/grad_norm": grad_norm,
+            "draft/refresh/lr": draft_lr,
+            "draft/refresh/time_s": elapsed,
+        }
 
     def forward_step(self, micro_batch: TensorDict, loss_function, forward_only):
         raise NotImplementedError("forward_step must be implemented in subclass")
@@ -711,12 +898,14 @@ class FSDPEngine(BaseEngine):
             scaler.unscale_(self.optimizer)
 
         self._optimizer_step_metrics = {}
+        active_groups = {}
         if self.model_config.mtp.growmtp:
             groups = {group.get("name"): group for group in self.optimizer.param_groups}
             for group_name, metric_prefix in (("policy", "target"), ("mtp", "draft")):
                 group = groups.get(group_name)
                 if group is None:
                     continue
+                active_groups[metric_prefix] = any(parameter.grad is not None for parameter in group["params"])
                 group_norm = fsdp2_grad_norm(group["params"])
                 self._optimizer_step_metrics[f"{metric_prefix}/grad_norm"] = group_norm.item()
                 self._optimizer_step_metrics[f"{metric_prefix}/optimizer/trainable_params"] = sum(
@@ -750,8 +939,8 @@ class FSDPEngine(BaseEngine):
 
         if self.model_config.mtp.growmtp:
             step_applied = 0.0 if step_skipped else 1.0
-            self._optimizer_step_metrics["target/optimizer/step_applied_fraction"] = step_applied
-            self._optimizer_step_metrics["draft/optimizer/step_applied_fraction"] = step_applied
+            for prefix, active in active_groups.items():
+                self._optimizer_step_metrics[f"{prefix}/optimizer/step_applied_fraction"] = step_applied * active
 
         if self._qat_enabled:
             from verl.utils.qat.core import invalidate_all_scales

@@ -99,6 +99,8 @@ Both tasks are supported by every preset. For Code, add `--task code` and supply
 
 Use `--gpus`, `--nodes`, and `--steps` to adjust resources and run length. Add `--dry-run` to inspect the training command. Full defaults are in `verl/verl/trainer/config/growmtp/`; additional settings can be passed as Hydra `key=value` arguments.
 
+The GrowMTP training preset defaults to policy-shift-aware refresh every four actor updates. On these steps, it defers head training until PPO finishes, ranks trajectories by positive advantage times full-path target KL, and replaces the teacher for the top 25%. One DCA/VGM head update uses new teachers for selected trajectories and recorded teachers for the rest. Training logs per-trajectory advantage/reward/acceptance, E2E time, GPU-hours, and shift/refresh diagnostics. See [comparison metrics](scripts/GROWMTP_COMPARISON_METRICS.md) for definitions, detector cost, configuration, and the JSONL comparison command.
+
 ## 🙏 Acknowledgements
 
 Built on [veRL](https://github.com/verl-project/verl) and [SGLang](https://github.com/sgl-project/sglang). Their licenses and notices are retained in the respective directories.

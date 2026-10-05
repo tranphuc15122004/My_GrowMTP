@@ -7,6 +7,8 @@ import sys
 import time
 from pathlib import Path
 
+import pytest
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 LAUNCHER = REPO_ROOT / "scripts" / "run_b200_growmtp_lora.sh"
@@ -111,7 +113,23 @@ def _fake_environment(
     fake_python.write_text(FAKE_PYTHON)
     fake_python.chmod(0o755)
     fake_nvidia = fake_bin / "nvidia-smi"
-    fake_nvidia.write_text("#!/usr/bin/env bash\nprintf 'NVIDIA B200, 180 GB\\n'\n")
+    fake_nvidia.write_text(r'''#!/usr/bin/env bash
+gpu_ids=0,1
+query_index=0
+for arg in "$@"; do
+    case "$arg" in
+        --id=*) gpu_ids="${arg#--id=}" ;;
+        --query-gpu=index,*) query_index=1 ;;
+    esac
+done
+IFS=',' read -r -a gpu_ids_array <<< "$gpu_ids"
+for gpu_id in "${gpu_ids_array[@]}"; do
+    if (( query_index )); then
+        printf '%s, ' "$gpu_id"
+    fi
+    printf 'NVIDIA B200, 180000\n'
+done
+''')
     fake_nvidia.chmod(0o755)
 
     inputs = tmp_path / "input"
@@ -163,6 +181,113 @@ def _run_launcher(
         timeout=20,
         check=False,
     )
+
+
+def _training_args(tmp_path):
+    calls = [
+        json.loads(line)
+        for line in (tmp_path / "fake-python.log").read_text().splitlines()
+    ]
+    training_calls = [call for call in calls if call and call[0].endswith("run_logged.py")]
+    return training_calls[-1][training_calls[-1].index("--") + 1:]
+
+
+@pytest.mark.parametrize(
+    ("run_mode", "probe_frequency", "validate", "validation_samples"),
+    [("smoke", 0, "false", 1), ("pilot", 0, "false", 1), ("full", 4, "true", 16)],
+)
+def test_launcher_comparison_measurement_defaults_by_mode(
+    tmp_path, run_mode, probe_frequency, validate, validation_samples
+):
+    env = _fake_environment(tmp_path, save_generations=0)
+    env["RUN_MODE"] = run_mode
+    result = subprocess.run(
+        ["bash", str(LAUNCHER)], cwd=REPO_ROOT, env=env,
+        capture_output=True, text=True, timeout=20, check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    train_args = _training_args(tmp_path)
+    assert f"++actor_rollout_ref.model.mtp.comparison_probe_frequency={probe_frequency}" in train_args
+    assert "++actor_rollout_ref.model.mtp.comparison_probe_max_cycles=4" in train_args
+    assert "++actor_rollout_ref.model.mtp.comparison_probe_max_context=1024" in train_args
+    assert "++actor_rollout_ref.model.mtp.comparison_log_trajectories=true" in train_args
+    assert f"++trainer.final_validation={validate}" in train_args
+    assert f"trainer.val_before_train={validate}" in train_args
+    assert f"actor_rollout_ref.rollout.val_kwargs.n={validation_samples}" in train_args
+    assert "trainer.test_freq=-1" in train_args
+    assert not any(arg.startswith("trainer.rollout_data_dir=") for arg in train_args)
+
+
+def test_launcher_saves_and_restores_comparison_measurement_overrides(tmp_path):
+    env = _fake_environment(tmp_path, save_generations=0)
+    env.update({
+        "MTP_PROBE_FREQ": "7", "MTP_PROBE_MAX_CYCLES": "2",
+        "MTP_PROBE_MAX_CONTEXT": "384", "COMPARISON_LOG_TRAJECTORIES": "0",
+        "FINAL_VALIDATION": "1", "VAL_BEFORE_TRAIN": "1", "VAL_SAMPLES": "8",
+    })
+    first = subprocess.run(
+        ["bash", str(LAUNCHER)], cwd=REPO_ROOT, env=env,
+        capture_output=True, text=True, timeout=20, check=False,
+    )
+    assert first.returncode == 0, first.stdout + first.stderr
+    expected_args = {
+        "++actor_rollout_ref.model.mtp.comparison_probe_frequency=7",
+        "++actor_rollout_ref.model.mtp.comparison_probe_max_cycles=2",
+        "++actor_rollout_ref.model.mtp.comparison_probe_max_context=384",
+        "++actor_rollout_ref.model.mtp.comparison_log_trajectories=false",
+        "++trainer.final_validation=true", "trainer.val_before_train=true",
+        "actor_rollout_ref.rollout.val_kwargs.n=8",
+    }
+    assert expected_args <= set(_training_args(tmp_path))
+    run_dir = next((tmp_path / "runs").iterdir())
+    expected_saved = {
+        "mtp_probe_freq=7", "mtp_probe_max_cycles=2", "mtp_probe_max_context=384",
+        "comparison_log_trajectories=0", "final_validation=1", "val_before_train=1",
+        "val_samples=8", "test_freq=-1",
+    }
+    launch_log = (run_dir / "config" / "launch.txt").read_text().splitlines()
+    assert expected_saved <= set(launch_log)
+
+    resumed = subprocess.run(
+        ["bash", str(run_dir / "config" / "resume.sh")], cwd=REPO_ROOT,
+        env=_fake_environment(tmp_path, save_generations=0, run_dir=run_dir),
+        capture_output=True, text=True, timeout=20, check=False,
+    )
+    assert resumed.returncode == 0, resumed.stdout + resumed.stderr
+    assert expected_args <= set(_training_args(tmp_path))
+    launch_log = (run_dir / "config" / "launch.txt").read_text().splitlines()
+    assert all(launch_log.count(setting) == 2 for setting in expected_saved)
+
+
+@pytest.mark.parametrize(
+    ("setting", "invalid", "message"),
+    [
+        ("MTP_PROBE_FREQ", "-1", "must be a non-negative integer"),
+        ("MTP_PROBE_FREQ", "1.5", "must be a non-negative integer"),
+        ("MTP_PROBE_MAX_CYCLES", "0", "must be a positive integer"),
+        ("MTP_PROBE_MAX_CONTEXT", "0", "must be a positive integer"),
+        ("VAL_SAMPLES", "0", "must be a positive integer"),
+        ("FINAL_VALIDATION", "2", "must be 0 or 1"),
+        ("VAL_BEFORE_TRAIN", "false", "must be 0 or 1"),
+        ("COMPARISON_LOG_TRAJECTORIES", "true", "must be 0 or 1"),
+    ],
+)
+def test_launcher_rejects_invalid_comparison_measurement_settings(
+    tmp_path, setting, invalid, message
+):
+    env = _fake_environment(tmp_path, save_generations=0)
+    env[setting] = invalid
+    result = subprocess.run(
+        ["bash", str(LAUNCHER)], cwd=REPO_ROOT, env=env,
+        capture_output=True, text=True, timeout=20, check=False,
+    )
+    assert result.returncode != 0
+    assert f"{setting} {message}" in result.stdout + result.stderr
+    calls = [
+        json.loads(line)
+        for line in (tmp_path / "fake-python.log").read_text().splitlines()
+    ]
+    assert not any(call and call[0].endswith("run_logged.py") for call in calls)
 
 
 def test_launcher_reuses_prepared_model_when_only_hydra_outputs_exist(tmp_path):

@@ -25,6 +25,11 @@ actor_rollout_ref.model.mtp.speculative_eagle_topk: 1
 ++actor_rollout_ref.model.mtp.warmup_steps: 10
 ++actor_rollout_ref.model.mtp.min_lr_ratio: 0.1
 ++actor_rollout_ref.model.mtp.teacher_topk: 64
+++actor_rollout_ref.model.mtp.comparison_probe_frequency: 4
+++actor_rollout_ref.model.mtp.comparison_probe_max_cycles: 4
+++actor_rollout_ref.model.mtp.comparison_probe_max_context: 1024
+++actor_rollout_ref.model.mtp.comparison_refresh_fraction: 0.25
+++actor_rollout_ref.model.mtp.comparison_log_trajectories: true
 actor_rollout_ref.actor.optim.lr: 0.000001
 actor_rollout_ref.actor.ppo_mini_batch_size: 64
 actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu: 1
@@ -81,7 +86,8 @@ trainer.logger: [console]
 trainer.project_name: growmtp
 trainer.experiment_name: growmtp
 trainer.balance_batch: false
-trainer.val_before_train: false
+trainer.val_before_train: true
+++trainer.final_validation: true
 trainer.save_freq: 10
 trainer.max_actor_ckpt_to_keep: 2
 trainer.test_freq: 50

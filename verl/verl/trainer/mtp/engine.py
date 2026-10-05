@@ -28,11 +28,13 @@ def head_schedule(step, total_steps, warmup_steps, min_ratio):
     return min_ratio + (1 - min_ratio) * 0.5 * (1 + math.cos(math.pi * progress))
 
 
-def backward_head(model, data, config, global_cycles, dp_size):
+def backward_head(model, data, config, global_cycles, dp_size, *, global_trajectories=None):
     """Accumulate the global cycle mean after policy backward, before the shared optimizer step.
 
     FSDP averages reduced gradients, hence local sums are scaled by dp_size/global_cycles.
     All ranks issue one head reduce-scatter even if cycle/chunk counts differ.
+    Deferred refresh steps optionally use a trajectory mean: average cycles within
+    each trajectory, then average over the full rollout batch (including empty rows).
     """
     if "mtp_num_cycles" not in data:
         raise RuntimeError("GrowMTP update received no verification-record transport fields")
@@ -64,6 +66,9 @@ def backward_head(model, data, config, global_cycles, dp_size):
             for record in records:
                 if record["topk_val"].shape[1] != config.speculative_num_steps:
                     raise ValueError("Rollout and training draft depths disagree")
+                denominator = global_cycles
+                if global_trajectories is not None:
+                    denominator = global_trajectories * record["position"].numel()
                 for losses, alpha in replay_chunks(
                     head,
                     embed.weight,
@@ -73,9 +78,10 @@ def backward_head(model, data, config, global_cycles, dp_size):
                     config.vocab_chunk_size,
                 ):
                     (
-                        losses.sum() * config.mtp_loss_scaling_factor * dp_size / global_cycles
+                        losses.sum() * config.mtp_loss_scaling_factor * dp_size / denominator
                     ).backward()
-                    total += losses.detach().sum()
+                    total += losses.detach().sum() / (record["position"].numel()
+                                                     if global_trajectories is not None else 1)
                     count += losses.numel()
                     computed = alpha != UNCOMPUTED_ALPHA
                     alpha_sum += alpha.masked_fill(~computed, 0).sum(0)
@@ -105,7 +111,8 @@ def backward_head(model, data, config, global_cycles, dp_size):
             head.reshard()
             model.reshard()
             model.set_reshard_after_backward(True, recurse=False)
-    metrics = {"mtp/num_cycles": float(count), "mtp/dca_loss": total.item() / max(1, count)}
+    mean_count = len(data["mtp_num_cycles"]) if global_trajectories is not None else count
+    metrics = {"mtp/num_cycles": float(count), "mtp/dca_loss": total.item() / max(1, mean_count)}
     counts = alpha_count.tolist()
     metrics["mtp/alpha_valid_only"] = 1.0
     metrics["mtp/projected_steps"] = sum(counts)

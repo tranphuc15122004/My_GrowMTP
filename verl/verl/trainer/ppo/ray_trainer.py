@@ -20,6 +20,7 @@ This trainer supports model-agonistic model initialization with huggingface
 
 import json
 import os
+from pathlib import Path
 import uuid
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
@@ -1324,6 +1325,21 @@ class RayPPOTrainer:
         batch_td = batch.to_tensordict()
         # step 2: convert from padding to no-padding
         batch_td = left_right_2_no_padding(batch_td)
+        mtp_config = self.config.actor_rollout_ref.model.mtp
+        if mtp_config.get("growmtp", False):
+            from verl.trainer.mtp.metrics import trajectory_advantages
+
+            frequency = int(mtp_config.get("comparison_probe_frequency", 0))
+            if frequency < 0:
+                raise ValueError("comparison_probe_frequency must be nonnegative")
+            if frequency > 0 and self.global_steps % frequency == 0:
+                batch_td["comparison_advantage"] = trajectory_advantages(
+                    batch.batch["advantages"], batch.batch["response_mask"]
+                )
+                batch_td["comparison_score"] = batch.batch["token_level_scores"].sum(-1)
+                batch_td["comparison_request_index"] = torch.arange(len(batch))
+                tu.assign_non_tensor(batch_td, comparison_probe_step=self.global_steps,
+                                     comparison_probe_output_dir=str(self._comparison_root() / "probes"))
         calculate_entropy = self.config.actor_rollout_ref.actor.calculate_entropy or (
             self.config.actor_rollout_ref.actor.entropy_coeff != 0.0
         )
@@ -1360,6 +1376,37 @@ class RayPPOTrainer:
         actor_output = DataProto.from_single_dict(data={}, meta_info={"metrics": actor_output})
 
         return actor_output
+
+    def _comparison_root(self):
+        run_root = os.environ.get("GROWMTP_RUN_DIR") or self.config.trainer.default_local_dir
+        return Path(run_root).resolve() / "artifacts" / "comparison"
+
+    def _log_comparison_trajectories(self, batch):
+        from verl.trainer.mtp.metrics import trajectory_advantages
+        from verl.trainer.mtp.probe import write_trajectory_rows
+
+        advantages = trajectory_advantages(batch.batch["advantages"], batch.batch["response_mask"]).cpu().tolist()
+        scores = batch.batch["token_level_scores"].sum(-1).cpu().tolist()
+        rewards = batch.batch["token_level_rewards"].sum(-1).cpu().tolist()
+        lengths = batch.batch["response_mask"].sum(-1).cpu().tolist()
+        draft_counts = batch.non_tensor_batch.get("spec_num_draft_tokens")
+        accept_counts = batch.non_tensor_batch.get("spec_num_accepted_tokens")
+        verify_counts = batch.non_tensor_batch.get("spec_num_verify_steps")
+        rows = []
+        for i, advantage in enumerate(advantages):
+            row = {"trajectory_index": i, "prompt_group_id": str(batch.non_tensor_batch["uid"][i]),
+                   "advantage": advantage if np.isfinite(advantage) else None,
+                   "score": scores[i] if np.isfinite(scores[i]) else None,
+                   "reward": rewards[i] if np.isfinite(rewards[i]) else None,
+                   "response_tokens": int(lengths[i])}
+            if draft_counts is not None and accept_counts is not None and verify_counts is not None:
+                proposed, accepted, verifies = int(draft_counts[i]), int(accept_counts[i]), int(verify_counts[i])
+                row.update({"proposed_draft_tokens": proposed, "accepted_draft_tokens": accepted,
+                            "verification_steps": verifies,
+                            "acceptance_length": 1 + accepted / verifies if verifies else None,
+                            "acceptance_rate": accepted / proposed if proposed else None})
+            rows.append(row)
+        write_trajectory_rows(self._comparison_root() / "trajectories", self.global_steps, rows)
 
     def _update_critic(self, batch: DataProto) -> DataProto:
         batch_td = batch.to_tensordict()
@@ -1408,6 +1455,11 @@ class RayPPOTrainer:
             default_backend=self.config.trainer.logger,
             config=OmegaConf.to_container(self.config, resolve=True),
         )
+        from verl.trainer.mtp.metrics import ComparisonTracker, trajectory_statistics
+        from verl.trainer.mtp.probe import should_validate
+
+        comparison_tracker = ComparisonTracker()
+        comparison_n_gpus = self.resource_pool_manager.get_n_gpus()
 
         self.global_steps = 0
 
@@ -1432,8 +1484,16 @@ class RayPPOTrainer:
 
         if self.global_steps >= self.total_training_steps:
             last_val_metrics = None
-            if self.config.trainer.test_freq > 0:
-                last_val_metrics = self._validate()
+            if self.config.trainer.test_freq > 0 or self.config.trainer.get("final_validation", False):
+                final_timing = {}
+                with marked_timer("testing", final_timing, color="green"):
+                    last_val_metrics = self._validate()
+                if self.config.actor_rollout_ref.model.mtp.get("growmtp", False):
+                    _add_growmtp_metric_aliases(last_val_metrics)
+                last_val_metrics.update({f"timing_s/{name}": value for name, value in final_timing.items()})
+                last_val_metrics.update(comparison_tracker.update(final_timing, comparison_n_gpus, 0))
+                last_val_metrics["comparison/evaluation/final"] = 1.0
+                logger.log(data=last_val_metrics, step=self.global_steps)
             self._shutdown_dump_executor()
             pprint(f"Training already reached step {self.global_steps}; no update was repeated.")
             pprint(f"Final validation metrics: {last_val_metrics}")
@@ -1442,11 +1502,16 @@ class RayPPOTrainer:
         # perform validation before training
         # currently, we only support validation using the reward_function.
         if self.config.trainer.get("val_before_train", True):
-            val_metrics = self._validate()
+            initial_timing = {}
+            with marked_timer("testing", initial_timing, color="green"):
+                val_metrics = self._validate()
             assert val_metrics, f"{val_metrics=}"
             if self.config.actor_rollout_ref.model.mtp.get("growmtp", False):
                 _add_growmtp_metric_aliases(val_metrics)
             pprint(f"Initial validation metrics: {val_metrics}")
+            val_metrics.update({f"timing_s/{name}": value for name, value in initial_timing.items()})
+            val_metrics.update(comparison_tracker.update(initial_timing, comparison_n_gpus, 0))
+            val_metrics["comparison/evaluation/initial"] = 1.0
             logger.log(data=val_metrics, step=self.global_steps)
             if self.config.trainer.get("val_only", False):
                 self._shutdown_dump_executor()
@@ -1742,16 +1807,21 @@ class RayPPOTrainer:
                     rollout_data_dir = self.config.trainer.get("rollout_data_dir", None)
                     if rollout_data_dir:
                         self._log_rollout_data(batch, reward_extra_infos_dict, timing_raw, rollout_data_dir)
+                    if self.config.actor_rollout_ref.model.mtp.get("growmtp", False) and (
+                        self.config.actor_rollout_ref.model.mtp.get("comparison_log_trajectories", True)
+                    ):
+                        with marked_timer("comparison_trajectories", timing_raw):
+                            self._log_comparison_trajectories(batch)
 
                 # validate
-                if self.config.trainer.test_freq > 0 and (
-                    is_last_step or self.global_steps % self.config.trainer.test_freq == 0
-                ):
+                if should_validate(self.global_steps, self.total_training_steps, self.config.trainer.test_freq,
+                                   self.config.trainer.get("final_validation", False)):
                     with marked_timer("testing", timing_raw, color="green"):
                         val_metrics: dict = self._validate()
                         if is_last_step:
                             last_val_metrics = val_metrics
                     metrics.update(val_metrics)
+                    metrics["comparison/evaluation/final"] = float(is_last_step)
 
                 with marked_timer("stop_profile", timing_raw):
                     next_step_profile = (
@@ -1779,6 +1849,31 @@ class RayPPOTrainer:
                 )
                 # collect metrics
                 metrics.update(compute_data_metrics(batch=batch, use_critic=self.use_critic))
+                metrics.update(trajectory_statistics(batch.batch["advantages"], batch.batch["response_mask"]))
+                if "draft/probe/time_s" in metrics:
+                    timing_raw["mtp_probe"] = float(metrics["draft/probe/time_s"])
+                metrics.update(comparison_tracker.update(
+                    timing_raw, comparison_n_gpus, int(batch.batch["response_mask"].sum().item())
+                ))
+                mtp_config = self.config.actor_rollout_ref.model.mtp
+                rollout_config = self.config.actor_rollout_ref.rollout
+                metrics.update({
+                    "comparison/config/probe_frequency": mtp_config.get("comparison_probe_frequency", 0),
+                    "comparison/config/probe_max_cycles": mtp_config.get("comparison_probe_max_cycles", 4),
+                    "comparison/config/probe_max_context": mtp_config.get("comparison_probe_max_context", 1024),
+                    "comparison/config/refresh_fraction": mtp_config.get("comparison_refresh_fraction", 0.25),
+                    "comparison/config/draft_depth": mtp_config.speculative_num_steps,
+                    "comparison/config/rollout_n": rollout_config.n,
+                    "comparison/config/rollout_temperature": rollout_config.temperature,
+                    "comparison/config/rollout_top_p": rollout_config.top_p,
+                    "comparison/config/rollout_top_k": rollout_config.top_k,
+                    "comparison/config/validation_n": rollout_config.val_kwargs.get("n", 1),
+                    "comparison/config/test_freq": self.config.trainer.test_freq,
+                    "comparison/config/final_validation": float(self.config.trainer.get("final_validation", False)),
+                    "comparison/config/val_before_train": float(self.config.trainer.get("val_before_train", True)),
+                    "comparison/config/train_batch_size": self.config.data.train_batch_size,
+                    "comparison/config/data_seed": self.config.data.seed,
+                })
                 # GDPO per-component reward metrics
                 gdpo_reward_keys = self.config.algorithm.get("gdpo_reward_keys", None)
                 if gdpo_reward_keys and self.config.algorithm.adv_estimator in ("gdpo", AdvantageEstimator.GDPO):

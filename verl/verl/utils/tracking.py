@@ -180,9 +180,10 @@ class Tracking:
             output_dir = trainer_config.get("default_local_dir")
             run_dir = os.environ.get("GROWMTP_RUN_DIR")
             metrics_path = None
-            if configured_log_level and log_level in {"compact", "normal", "debug"} and (run_dir or output_dir):
-                run_root = Path(run_dir).resolve() if run_dir else Path(output_dir).resolve().parent
+            if run_dir or output_dir:
+                run_root = Path(run_dir or output_dir).expanduser().resolve()
                 metrics_path = run_root / "logs" / "metrics.jsonl"
+                metrics_path.parent.mkdir(parents=True, exist_ok=True)
             self.console_logger = LocalLogger(
                 print_to_console=True,
                 log_level=log_level,

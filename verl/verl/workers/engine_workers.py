@@ -14,6 +14,7 @@
 import functools
 import logging
 import os
+import time
 from contextlib import nullcontext
 from copy import deepcopy
 from functools import partial
@@ -240,6 +241,8 @@ class TrainingWorker(Worker, DistProfilerExtension):
         Returns:
 
         """
+        from contextlib import ExitStack
+
         maybe_fix_3d_position_ids(data)
         batch_size_per_dp = data.shape[0]
         disable_auto_offload = tu.pop(data, key="disable_auto_offload", default=False)
@@ -248,6 +251,8 @@ class TrainingWorker(Worker, DistProfilerExtension):
         epochs = tu.pop(data, key="epochs", default=1)
         seed = tu.pop(data, key="seed", default=42)
         dataloader_kwargs = tu.pop(data, key="dataloader_kwargs", default={})
+        comparison_probe_step = tu.pop(data, key="comparison_probe_step", default=0)
+        comparison_probe_output_dir = tu.pop(data, key="comparison_probe_output_dir", default=None)
 
         assert mini_batch_size is not None or num_mini_batch is not None
 
@@ -272,7 +277,18 @@ class TrainingWorker(Worker, DistProfilerExtension):
         with (
             self.engine.train_mode(disable_auto_offload=disable_auto_offload),
             Timer(name="train_batch", logger=None),
+            ExitStack() as probe_resources,
         ):
+            self.engine._mtp_update_seconds = 0.0
+            probe_snapshot = None
+            probe_seconds = 0.0
+            if comparison_probe_step:
+                started = time.perf_counter()
+                probe_snapshot = self.engine.capture_comparison_probe(data, comparison_probe_step)
+                cache = probe_snapshot.get("shift", {}).get("cache")
+                if cache is not None:
+                    probe_resources.callback(cache.close)
+                probe_seconds += time.perf_counter() - started
             # update
             output_lst = []
             total_num_iterations = data.shape[0] // mini_batch_size_per_gpu * epochs
@@ -297,9 +313,24 @@ class TrainingWorker(Worker, DistProfilerExtension):
                     global_token_num=NonTensorData(global_token_num),
                     update_lr_scheduler=batch_idx == total_num_iterations - 1,
                     disable_auto_offload=True,
+                    mtp_defer_head_update=bool(probe_snapshot and probe_snapshot.get("defer_head_update")),
                 )
                 actor_output = self.train_batch(mini_batch_td)
                 output_lst.append(actor_output)
+
+            probe_metrics = {}
+            if probe_snapshot is not None:
+                started = time.perf_counter()
+                probe_metrics = self.engine.finish_comparison_probe(probe_snapshot, comparison_probe_output_dir)
+                probe_seconds += time.perf_counter() - started
+            if self.model_config.mtp.growmtp:
+                durations = torch.tensor([self.engine._mtp_update_seconds, probe_seconds], device=self.device_name)
+                if torch.distributed.is_initialized():
+                    torch.distributed.all_reduce(durations, op=torch.distributed.ReduceOp.MAX,
+                                                 group=self.engine.get_data_parallel_group())
+                probe_metrics["draft/update_seconds"] = durations[0].item()
+                if probe_snapshot is not None:
+                    probe_metrics["draft/probe/time_s"] = durations[1].item()
 
             if self.engine.is_mp_src_rank_with_outputs():
                 actor_output = [tu.get(output, "metrics") for output in output_lst]
@@ -314,6 +345,8 @@ class TrainingWorker(Worker, DistProfilerExtension):
                                 else list(chain.from_iterable(val))
                             )
                     append_to_dict(metrics, output)
+                for key, value in probe_metrics.items():
+                    metrics[key] = [value]
 
                 output = tu.get_tensordict(tensor_dict={}, non_tensor_dict={"metrics": metrics}).cpu()
             else:

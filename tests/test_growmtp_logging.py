@@ -2,6 +2,7 @@ import importlib.util
 import json
 import subprocess
 import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -165,3 +166,44 @@ def test_compact_summary_skips_non_scalar_tensor_metric(capsys):
     output = capsys.readouterr().out
     assert "GROWMTP_STEP" in output
     assert "policy" not in output
+
+
+def _load_tracking(monkeypatch):
+    # Keep the real console logger; only substitute unavailable optional imports.
+    logger_package = types.ModuleType("verl.utils.logger")
+    logger_package.LocalLogger = LocalLogger
+    monkeypatch.setitem(sys.modules, "verl.utils.logger", logger_package)
+    monkeypatch.setitem(sys.modules, "orjson", types.ModuleType("orjson"))
+    path = REPO_ROOT / "verl" / "verl" / "utils" / "tracking.py"
+    spec = importlib.util.spec_from_file_location("growmtp_tracking", path)
+    module = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, spec.name, module)
+    spec.loader.exec_module(module)
+    return module.Tracking
+
+
+def test_console_tracking_persists_scalars_without_custom_log_environment(tmp_path, monkeypatch):
+    monkeypatch.delenv("GROWMTP_LOG_LEVEL", raising=False)
+    monkeypatch.delenv("GROWMTP_RUN_DIR", raising=False)
+    output_dir = tmp_path / "training_output"
+    tracking = _load_tracking(monkeypatch)("test", "run", config={"trainer": {"default_local_dir": str(output_dir)}})
+
+    tracking.log({"comparison/time/step_e2e_s": LOGGER_MODULE.torch.tensor(12.0)}, step=1)
+
+    path = output_dir / "logs" / "metrics.jsonl"
+    assert path.is_file()
+    assert json.loads(path.read_text())["comparison/time/step_e2e_s"] == 12.0
+
+
+def test_console_tracking_run_dir_overrides_training_output_and_creates_log_directory(tmp_path, monkeypatch):
+    monkeypatch.setenv("GROWMTP_RUN_DIR", str(tmp_path / "explicit_run"))
+    monkeypatch.setenv("GROWMTP_LOG_LEVEL", "compact")
+    output_dir = tmp_path / "checkpoints"
+    tracking = _load_tracking(monkeypatch)("test", "run", config={"trainer": {"default_local_dir": str(output_dir)}})
+
+    tracking.log({"rollout/mtp/acceptance_rate": 0.75}, step=1)
+
+    path = tmp_path / "explicit_run" / "logs" / "metrics.jsonl"
+    assert path.is_file()
+    assert json.loads(path.read_text())["rollout/mtp/acceptance_rate"] == 0.75
+    assert not (output_dir / "logs" / "metrics.jsonl").exists()
