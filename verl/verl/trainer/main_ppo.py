@@ -112,6 +112,10 @@ def run_ppo(config, task_runner_class=None) -> None:
         run_dir = os.environ.get("GROWMTP_RUN_DIR")
         if run_dir:
             runtime_env_vars["GROWMTP_RUN_DIR"] = run_dir
+        for env_name in ("TMPDIR", "GROWMTP_SHIFT_CACHE_DIR"):
+            env_value = os.environ.get(env_name)
+            if env_value:
+                runtime_env_vars[env_name] = env_value
         if runtime_env_vars:
             runtime_env_kwargs["env_vars"] = runtime_env_vars
 

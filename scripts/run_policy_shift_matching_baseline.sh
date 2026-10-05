@@ -67,8 +67,10 @@ mkdir -p "$IDEA_RUN/logs" "$IDEA_RUN/runtime/tmp"
 export CUDA_VISIBLE_DEVICES="$GPU_IDS"
 export PYTHONPATH="$REPO_ROOT/verl:$REPO_ROOT/sglang/python${PYTHONPATH:+:$PYTHONPATH}"
 export GROWMTP_RUN_DIR="$IDEA_RUN"
-# Keep the full-vocabulary FP32 cache on the run's storage filesystem.
-export TMPDIR="$IDEA_RUN/runtime/tmp"
+# SGLang uses TMPDIR for Unix-domain IPC sockets, whose paths have a short limit.
+# Keep generic temporary files under /tmp and place only the large shift cache on run storage.
+export TMPDIR=/tmp
+export GROWMTP_SHIFT_CACHE_DIR="$IDEA_RUN/runtime/tmp"
 
 printf 'Python: %s\nBaseline config: %s/config/%s.yaml\n' "$GROWMTP_PYTHON" "$BASELINE_RUN" "$BASELINE_CONFIG"
 printf 'Idea run: %s\nMode: %s\nGPU IDs: %s (%s GPUs)\nSteps: %s\n' "$IDEA_RUN" "$RUN_MODE" "$GPU_IDS" "$GPU_COUNT" "$TRAIN_STEPS"

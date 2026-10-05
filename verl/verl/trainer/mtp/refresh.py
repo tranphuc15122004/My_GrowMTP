@@ -7,6 +7,7 @@ Only selected trajectories receive new hidden states and top-k supervision.
 
 from contextlib import closing
 import math
+import os
 import tempfile
 
 import torch
@@ -41,7 +42,8 @@ def record_cases(records):
 
 def capture_shift(model, records, *, source):
     """Raw teacher convention matches SGLang, independently of rollout temperature."""
-    cache = tempfile.TemporaryFile() if source else None
+    cache_dir = os.environ.get("GROWMTP_SHIFT_CACHE_DIR")
+    cache = tempfile.TemporaryFile(dir=cache_dir) if source else None
     positive = [record for record in records if record["advantage"] > 0]
     positions = 0
     try:
