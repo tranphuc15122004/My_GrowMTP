@@ -9,10 +9,34 @@ cd "$REPO_ROOT"
 BASELINE_RUN="${BASELINE_RUN:-/workspace/storage-shared/nlp/dungdx4/phuc_projects/outputs/qwen3-4b-growmtp-lora/runs/qwen3-4b-growmtp-500steps-20260930T221333Z}"
 BASELINE_CONFIG="${BASELINE_CONFIG:-resolved_config-20260930T221455Z-1321745}"
 GROWMTP_PYTHON="${GROWMTP_PYTHON:-}"
-TRAIN_STEPS="${TRAIN_STEPS:-500}"
+RUN_MODE="${RUN_MODE:-full}"
+TRAIN_STEPS="${TRAIN_STEPS:-}"
 GPU_IDS="${GPU_IDS:-0}"
 
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+
+case "$RUN_MODE" in
+  smoke)
+    TRAIN_STEPS="${TRAIN_STEPS:-4}"
+    MODE_OVERRIDES=(
+      data.train_batch_size=2 data.max_response_length=128
+      actor_rollout_ref.rollout.n=2 actor_rollout_ref.rollout.agent.num_workers=2
+      actor_rollout_ref.actor.ppo_mini_batch_size=2
+      actor_rollout_ref.actor.ppo_micro_batch_size_per_gpu=1
+      actor_rollout_ref.actor.ppo_max_token_len_per_gpu=8192
+      actor_rollout_ref.ref.log_prob_max_token_len_per_gpu=8192
+      actor_rollout_ref.rollout.log_prob_max_token_len_per_gpu=8192
+      actor_rollout_ref.rollout.max_num_batched_tokens=4096
+      actor_rollout_ref.rollout.val_kwargs.n=1 trainer.save_freq=4
+    )
+    ;;
+  full)
+    TRAIN_STEPS="${TRAIN_STEPS:-500}"
+    MODE_OVERRIDES=()
+    ;;
+  *) die "RUN_MODE must be 'smoke' or 'full'" ;;
+esac
+
 source "$SCRIPT_DIR/python_env.sh"
 resolve_growmtp_python "$REPO_ROOT" || die "No Python interpreter found in the active environment or PATH"
 source "$SCRIPT_DIR/gpu_args.sh"
@@ -21,6 +45,9 @@ parse_gpuid_args "$@" || exit $?
 [[ -f "$BASELINE_RUN/config/$BASELINE_CONFIG.yaml" ]] || die "Saved baseline config not found: $BASELINE_RUN/config/$BASELINE_CONFIG.yaml"
 [[ -f "$BASELINE_RUN/prepared_model/config.json" ]] || die "Initial baseline model not found: $BASELINE_RUN/prepared_model"
 [[ "$TRAIN_STEPS" =~ ^[1-9][0-9]*$ ]] || die "TRAIN_STEPS must be a positive integer"
+if [[ "$RUN_MODE" == smoke ]] && (( TRAIN_STEPS < 4 )); then
+  die "Idea smoke needs at least 4 steps to reach the first comparison probe"
+fi
 command -v nvidia-smi >/dev/null 2>&1 || die "nvidia-smi is not available; select GPUs on the training server"
 GPU_SUMMARY="$(nvidia-smi --id="$GPU_IDS" --query-gpu=index,name --format=csv,noheader 2>/dev/null)" || \
   die "Requested GPU(s) are not available according to nvidia-smi: $GPU_IDS"
@@ -44,7 +71,7 @@ export GROWMTP_RUN_DIR="$IDEA_RUN"
 export TMPDIR="$IDEA_RUN/runtime/tmp"
 
 printf 'Python: %s\nBaseline config: %s/config/%s.yaml\n' "$GROWMTP_PYTHON" "$BASELINE_RUN" "$BASELINE_CONFIG"
-printf 'Idea run: %s\nGPU IDs: %s (%s GPUs)\nSteps: %s\n' "$IDEA_RUN" "$GPU_IDS" "$GPU_COUNT" "$TRAIN_STEPS"
+printf 'Idea run: %s\nMode: %s\nGPU IDs: %s (%s GPUs)\nSteps: %s\n' "$IDEA_RUN" "$RUN_MODE" "$GPU_IDS" "$GPU_COUNT" "$TRAIN_STEPS"
 printf 'Metrics: %s/logs/metrics.jsonl\n' "$IDEA_RUN"
 
 exec "$GROWMTP_PYTHON" "$SCRIPT_DIR/run_logged.py" \
@@ -65,4 +92,5 @@ exec "$GROWMTP_PYTHON" "$SCRIPT_DIR/run_logged.py" \
   ++trainer.validation_data_dir="$IDEA_RUN/artifacts/validation" \
   global_profiler.save_path="$IDEA_RUN/artifacts/profiling" \
   ++ray_kwargs.ray_init._temp_dir="/tmp/gmtp-idea-$$" \
-  hydra.run.dir="$IDEA_RUN/runtime/hydra"
+  hydra.run.dir="$IDEA_RUN/runtime/hydra" \
+  "${MODE_OVERRIDES[@]}"
