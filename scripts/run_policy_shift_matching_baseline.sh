@@ -92,5 +92,6 @@ exec "$GROWMTP_PYTHON" "$SCRIPT_DIR/run_logged.py" \
   ++trainer.validation_data_dir="$IDEA_RUN/artifacts/validation" \
   global_profiler.save_path="$IDEA_RUN/artifacts/profiling" \
   ++ray_kwargs.ray_init._temp_dir="/tmp/gmtp-idea-$$" \
+  ++ray_kwargs.ray_init.include_dashboard=false \
   hydra.run.dir="$IDEA_RUN/runtime/hydra" \
   "${MODE_OVERRIDES[@]}"
