@@ -6,7 +6,7 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
-BASELINE_RUN="${BASELINE_RUN:-/workspace/storage-shared/nlp/dungdx4/phuc_projects/outputs/qwen3-4b-growmtp-lora/runs/qwen3-4b-growmtp-full-gpu0-20260930T221333Z}"
+BASELINE_RUN="${BASELINE_RUN:-/workspace/storage-shared/nlp/dungdx4/phuc_projects/outputs/qwen3-4b-growmtp-lora/runs/qwen3-4b-growmtp-500steps-20260930T221333Z}"
 BASELINE_CONFIG="${BASELINE_CONFIG:-resolved_config-20260930T221455Z-1321745}"
 GROWMTP_PYTHON="${GROWMTP_PYTHON:-}"
 TRAIN_STEPS="${TRAIN_STEPS:-500}"

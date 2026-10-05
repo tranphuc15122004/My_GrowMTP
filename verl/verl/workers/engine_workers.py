@@ -337,13 +337,12 @@ class TrainingWorker(Worker, DistProfilerExtension):
                 metrics = {}
                 for output in actor_output:
                     for key, val in output.items():
-                        # flattn dp and micro batch
-                        if isinstance(val, list):
-                            output[key] = (
-                                Metric.aggregate_dp(val)
-                                if isinstance(val[0], Metric)
-                                else list(chain.from_iterable(val))
-                            )
+                        # Gathered scalar metrics are lists too; flatten only nested per-micro-batch lists.
+                        if isinstance(val, list) and val:
+                            if isinstance(val[0], Metric):
+                                output[key] = Metric.aggregate_dp(val)
+                            elif isinstance(val[0], (list, tuple)):
+                                output[key] = list(chain.from_iterable(val))
                     append_to_dict(metrics, output)
                 for key, value in probe_metrics.items():
                     metrics[key] = [value]
