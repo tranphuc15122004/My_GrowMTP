@@ -349,3 +349,41 @@ def test_shift_score_averages_all_cycles_and_uses_positive_advantage(engine, tmp
     assert rows[1]['refresh_selected']
     assert all(not row['refresh_selected'] for row in (rows[0],rows[2],rows[3]))
     assert all(row['kl_measured'] == (i < 2) for i,row in enumerate(rows))
+
+
+def test_aux_ce_updates_only_positive_advantage_trajectory_head(engine):
+    data = rollout_data(engine, counts=(1, 1))
+    nested = lambda rows: torch.nested.nested_tensor(rows, layout=torch.jagged)
+    data['mtp_target_tokens'] = nested([torch.tensor([[5, 7]]), torch.tensor([[6, 8]])])
+    data['mtp_target_mask'] = nested([torch.ones(1, 2, dtype=torch.bool)] * 2)
+    data['response_mask'] = torch.tensor([[1, 1], [1, 1]])
+    data['advantages'] = torch.tensor([[3., 3.], [-1., -1.]])
+
+    def head_gradient():
+        return torch.cat([p.grad.flatten() for p in engine.module.mtp.parameters()
+                          if p.grad is not None])
+
+    config = engine.model_config.mtp
+    config.rollout_aux_ce_lambda = 0.
+    engine.module.zero_grad(set_to_none=True)
+    engine.replay_engine.backward_head(engine.module, data, config, 2, 1)
+    baseline_gradient = head_gradient().clone()
+
+    config.rollout_aux_ce_lambda = .05
+    config.rollout_aux_advantage_clip = 2.
+    engine.module.zero_grad(set_to_none=True)
+    metrics = engine.replay_engine.backward_head(engine.module, data, config, 2, 1)
+    assert metrics['mtp/aux_ce_valid_cycles'] == 2
+    assert metrics['mtp/aux_ce_positive_cycles'] == 1
+    assert metrics['mtp/aux_ce_loss'] > 0
+    assert metrics['mtp/aux_ce_contribution'] == pytest.approx(.05 * metrics['mtp/aux_ce_loss'])
+    assert not torch.allclose(head_gradient(), baseline_gradient)
+    assert all(p.grad is None for name, p in engine.module.named_parameters()
+               if not name.startswith('mtp.'))
+
+    data['advantages'].fill_(-1)
+    engine.module.zero_grad(set_to_none=True)
+    no_positive = engine.replay_engine.backward_head(engine.module, data, config, 2, 1)
+    assert no_positive['mtp/aux_ce_positive_cycles'] == 0
+    assert no_positive['mtp/aux_ce_contribution'] == 0
+    torch.testing.assert_close(head_gradient(), baseline_gradient)

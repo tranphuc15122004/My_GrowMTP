@@ -218,6 +218,23 @@ def test_launcher_comparison_measurement_defaults_by_mode(
     assert not any(arg.startswith("trainer.rollout_data_dir=") for arg in train_args)
 
 
+def test_launcher_aux_ce_disables_exact_kl_probe(tmp_path):
+    env = _fake_environment(tmp_path, save_generations=0)
+    env.update({
+        "RUN_MODE": "full", "MTP_PROBE_FREQ": "7",
+        "MTP_AUX_CE_LAMBDA": "0.125", "MTP_AUX_ADVANTAGE_CLIP": "1.5",
+    })
+    result = subprocess.run(
+        ["bash", str(LAUNCHER)], cwd=REPO_ROOT, env=env,
+        capture_output=True, text=True, timeout=20, check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    args = set(_training_args(tmp_path))
+    assert "++actor_rollout_ref.model.mtp.comparison_probe_frequency=0" in args
+    assert "++actor_rollout_ref.model.mtp.rollout_aux_ce_lambda=0.125" in args
+    assert "++actor_rollout_ref.model.mtp.rollout_aux_advantage_clip=1.5" in args
+
+
 def test_launcher_saves_and_restores_comparison_measurement_overrides(tmp_path):
     env = _fake_environment(tmp_path, save_generations=0)
     env.update({

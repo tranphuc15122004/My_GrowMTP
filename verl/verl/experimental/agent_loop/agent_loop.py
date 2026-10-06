@@ -930,11 +930,13 @@ class AgentLoopWorker:
 
         from verl.trainer.mtp.signals import pack_signals
         records = [item.extra_fields.pop("mtp_signals", None) for item in inputs]
+        mtp_config = self.config.actor_rollout_ref.model.mtp
+        collect_target_tokens = float(mtp_config.get("rollout_aux_ce_lambda", 0.0)) > 0
         if not validate and (
             any(record is not None for record in records)
-            or self.config.actor_rollout_ref.model.mtp.get("growmtp", False)
+            or mtp_config.get("growmtp", False)
         ):
-            pack_signals(batch, records)
+            pack_signals(batch, records, include_target_tokens=collect_target_tokens)
 
         scores = [input.reward_score for input in inputs]
         if all(score is not None for score in scores):

@@ -91,6 +91,9 @@ class MtpConfig(BaseConfig):
     comparison_probe_max_context: int = 1024
     comparison_refresh_fraction: float = 0.25
     comparison_log_trajectories: bool = True
+    # A positive coefficient enables advantage-weighted CE on emitted rollout tokens.
+    rollout_aux_ce_lambda: float = 0.0
+    rollout_aux_advantage_clip: float = 2.0
 
     detach_encoder: bool = False
     mtp_loss_scaling_factor: float = 0.1

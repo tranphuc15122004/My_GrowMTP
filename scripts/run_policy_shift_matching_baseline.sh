@@ -12,6 +12,8 @@ GROWMTP_PYTHON="${GROWMTP_PYTHON:-}"
 RUN_MODE="${RUN_MODE:-full}"
 TRAIN_STEPS="${TRAIN_STEPS:-}"
 GPU_IDS="${GPU_IDS:-0}"
+MTP_AUX_CE_LAMBDA="${MTP_AUX_CE_LAMBDA:-0}"
+MTP_AUX_ADVANTAGE_CLIP="${MTP_AUX_ADVANTAGE_CLIP:-2}"
 
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 
@@ -42,10 +44,27 @@ resolve_growmtp_python "$REPO_ROOT" || die "No Python interpreter found in the a
 source "$SCRIPT_DIR/gpu_args.sh"
 parse_gpuid_args "$@" || exit $?
 [[ -x "$GROWMTP_PYTHON" ]] || die "Python not found: $GROWMTP_PYTHON"
+"$GROWMTP_PYTHON" -c 'import math, sys; v=float(sys.argv[1]); sys.exit(0 if math.isfinite(v) and v >= 0 else 1)' \
+  "$MTP_AUX_CE_LAMBDA" || die "MTP_AUX_CE_LAMBDA must be a finite nonnegative number"
+if [[ "${MTP_AUX_CE_REQUIRED:-0}" == 1 ]]; then
+  awk -v value="$MTP_AUX_CE_LAMBDA" 'BEGIN { exit !(value + 0 > 0) }' || \
+    die "MTP_AUX_CE_LAMBDA must be greater than zero for this launcher"
+fi
+"$GROWMTP_PYTHON" -c 'import math, sys; v=float(sys.argv[1]); sys.exit(0 if math.isfinite(v) and v > 0 else 1)' \
+  "$MTP_AUX_ADVANTAGE_CLIP" || die "MTP_AUX_ADVANTAGE_CLIP must be a finite positive number"
+if awk -v value="$MTP_AUX_CE_LAMBDA" 'BEGIN { exit !(value + 0 > 0) }'; then
+  IDEA_METHOD="rollout-adv-ce"
+  PROBE_FREQUENCY=0
+  REFRESH_FRACTION=0
+else
+  IDEA_METHOD="policy-shift"
+  PROBE_FREQUENCY=4
+  REFRESH_FRACTION=0.25
+fi
 [[ -f "$BASELINE_RUN/config/$BASELINE_CONFIG.yaml" ]] || die "Saved baseline config not found: $BASELINE_RUN/config/$BASELINE_CONFIG.yaml"
 [[ -f "$BASELINE_RUN/prepared_model/config.json" ]] || die "Initial baseline model not found: $BASELINE_RUN/prepared_model"
 [[ "$TRAIN_STEPS" =~ ^[1-9][0-9]*$ ]] || die "TRAIN_STEPS must be a positive integer"
-if [[ "$RUN_MODE" == smoke ]] && (( TRAIN_STEPS < 4 )); then
+if [[ "$RUN_MODE" == smoke && "$IDEA_METHOD" == policy-shift ]] && (( TRAIN_STEPS < 4 )); then
   die "Idea smoke needs at least 4 steps to reach the first comparison probe"
 fi
 command -v nvidia-smi >/dev/null 2>&1 || die "nvidia-smi is not available; select GPUs on the training server"
@@ -56,7 +75,7 @@ GPU_SUMMARY_COUNT="$(printf '%s\n' "$GPU_SUMMARY" | awk 'NF { count++ } END { pr
 
 BASELINE_RUN="$(realpath -- "$BASELINE_RUN")"
 GPU_TAG="${GPU_IDS//,/-}"
-IDEA_RUN="${IDEA_RUN:-${BASELINE_RUN%/*}/policy-shift-growmtp-gpu${GPU_TAG}-${TRAIN_STEPS}step-$(date -u +%Y%m%dT%H%M%SZ)-$$}"
+IDEA_RUN="${IDEA_RUN:-${BASELINE_RUN%/*}/${IDEA_METHOD}-growmtp-gpu${GPU_TAG}-${TRAIN_STEPS}step-$(date -u +%Y%m%dT%H%M%SZ)-$$}"
 IDEA_RUN="$(realpath -m -- "$IDEA_RUN")"
 case "$IDEA_RUN" in
     "$BASELINE_RUN"|"$BASELINE_RUN"/*) die "Choose an idea output directory outside the baseline run" ;;
@@ -73,7 +92,8 @@ export TMPDIR=/tmp
 export GROWMTP_SHIFT_CACHE_DIR="$IDEA_RUN/runtime/tmp"
 
 printf 'Python: %s\nBaseline config: %s/config/%s.yaml\n' "$GROWMTP_PYTHON" "$BASELINE_RUN" "$BASELINE_CONFIG"
-printf 'Idea run: %s\nMode: %s\nGPU IDs: %s (%s GPUs)\nSteps: %s\n' "$IDEA_RUN" "$RUN_MODE" "$GPU_IDS" "$GPU_COUNT" "$TRAIN_STEPS"
+printf 'Idea run: %s\nMethod: %s\nMode: %s\nGPU IDs: %s (%s GPUs)\nSteps: %s\n' "$IDEA_RUN" "$IDEA_METHOD" "$RUN_MODE" "$GPU_IDS" "$GPU_COUNT" "$TRAIN_STEPS"
+printf 'Auxiliary CE lambda: %s · advantage clip: %s\n' "$MTP_AUX_CE_LAMBDA" "$MTP_AUX_ADVANTAGE_CLIP"
 printf 'Metrics: %s/logs/metrics.jsonl\n' "$IDEA_RUN"
 
 exec "$GROWMTP_PYTHON" "$SCRIPT_DIR/run_logged.py" \
@@ -84,11 +104,13 @@ exec "$GROWMTP_PYTHON" "$SCRIPT_DIR/run_logged.py" \
   trainer.resume_mode=disable trainer.default_local_dir="$IDEA_RUN/checkpoints" \
   trainer.default_hdfs_dir=null \
   trainer.n_gpus_per_node="$GPU_COUNT" trainer.total_training_steps="$TRAIN_STEPS" \
-  ++actor_rollout_ref.model.mtp.comparison_probe_frequency=4 \
-  ++actor_rollout_ref.model.mtp.comparison_refresh_fraction=0.25 \
+  ++actor_rollout_ref.model.mtp.comparison_probe_frequency="$PROBE_FREQUENCY" \
+  ++actor_rollout_ref.model.mtp.comparison_refresh_fraction="$REFRESH_FRACTION" \
   ++actor_rollout_ref.model.mtp.comparison_probe_max_cycles=4 \
   ++actor_rollout_ref.model.mtp.comparison_probe_max_context=1024 \
   ++actor_rollout_ref.model.mtp.comparison_log_trajectories=true \
+  ++actor_rollout_ref.model.mtp.rollout_aux_ce_lambda="$MTP_AUX_CE_LAMBDA" \
+  ++actor_rollout_ref.model.mtp.rollout_aux_advantage_clip="$MTP_AUX_ADVANTAGE_CLIP" \
   trainer.val_before_train=false trainer.test_freq=-1 ++trainer.final_validation=false \
   trainer.rollout_data_dir="$IDEA_RUN/artifacts/rollouts" \
   ++trainer.validation_data_dir="$IDEA_RUN/artifacts/validation" \

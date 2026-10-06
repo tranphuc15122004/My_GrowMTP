@@ -27,6 +27,8 @@ SAVE_GENERATIONS="${SAVE_GENERATIONS:-0}"
 MTP_PROBE_MAX_CYCLES="${MTP_PROBE_MAX_CYCLES:-4}"
 MTP_PROBE_MAX_CONTEXT="${MTP_PROBE_MAX_CONTEXT:-1024}"
 MTP_REFRESH_FRACTION="${MTP_REFRESH_FRACTION:-0.25}"
+MTP_AUX_CE_LAMBDA="${MTP_AUX_CE_LAMBDA:-0}"
+MTP_AUX_ADVANTAGE_CLIP="${MTP_AUX_ADVANTAGE_CLIP:-2}"
 COMPARISON_LOG_TRAJECTORIES="${COMPARISON_LOG_TRAJECTORIES:-1}"
 # Keep PEFT training, but merge the adapter into rollout weights because
 # SGLang's dynamic-LoRA path rejects GrowMTP's EAGLE speculative decoding.
@@ -354,6 +356,14 @@ COMPARISON_LOG_TRAJECTORIES_HYDRA=false
     "$ROLLOUT_GPU_MEMORY_UTILIZATION" || die "ROLLOUT_GPU_MEMORY_UTILIZATION must be between 0 and 1"
 "$GROWMTP_PYTHON" -c 'import math, sys; value=float(sys.argv[1]); sys.exit(0 if math.isfinite(value) and 0 <= value <= 1 else 1)' \
     "$MTP_REFRESH_FRACTION" || die "MTP_REFRESH_FRACTION must be between 0 and 1"
+"$GROWMTP_PYTHON" -c 'import math, sys; value=float(sys.argv[1]); sys.exit(0 if math.isfinite(value) and value >= 0 else 1)' \
+    "$MTP_AUX_CE_LAMBDA" || die "MTP_AUX_CE_LAMBDA must be a finite nonnegative number"
+"$GROWMTP_PYTHON" -c 'import math, sys; value=float(sys.argv[1]); sys.exit(0 if math.isfinite(value) and value > 0 else 1)' \
+    "$MTP_AUX_ADVANTAGE_CLIP" || die "MTP_AUX_ADVANTAGE_CLIP must be a finite positive number"
+if awk -v value="$MTP_AUX_CE_LAMBDA" 'BEGIN { exit !(value + 0 > 0) }'; then
+    # The rollout-advantage objective is piloted separately from exact-KL refresh.
+    MTP_PROBE_FREQ=0
+fi
 [[ "$TEST_FREQ" == "-1" || "$TEST_FREQ" =~ ^[1-9][0-9]*$ ]] || \
     die "TEST_FREQ must be -1 or a positive integer"
 (( PPO_MINI_BATCH_SIZE <= TRAIN_BATCH_SIZE * ROLLOUT_N )) || \
@@ -373,7 +383,7 @@ write_resume_config() {
             RESPONSE_LENGTH TRAIN_BATCH_SIZE ROLLOUT_N AGENT_LOOP_WORKERS PPO_MINI_BATCH_SIZE \
             MAX_BATCHED_TOKENS MAX_TOKEN_LEN_PER_GPU SAVE_FREQ TEST_FREQ \
             MTP_PROBE_FREQ MTP_PROBE_MAX_CYCLES MTP_PROBE_MAX_CONTEXT COMPARISON_LOG_TRAJECTORIES \
-            MTP_REFRESH_FRACTION \
+            MTP_REFRESH_FRACTION MTP_AUX_CE_LAMBDA MTP_AUX_ADVANTAGE_CLIP \
             FINAL_VALIDATION VAL_BEFORE_TRAIN VAL_SAMPLES \
             MAX_PROMPT_LENGTH ROLLOUT_GPU_MEMORY_UTILIZATION \
             AR_BASELINE_MS_PER_TOKEN AR_BASELINE_TOKENS_PER_SECOND_PER_GPU AR_BASELINE_AUTO \
@@ -426,6 +436,8 @@ printf '%s\n' \
     "mtp_probe_max_cycles=$MTP_PROBE_MAX_CYCLES" \
     "mtp_probe_max_context=$MTP_PROBE_MAX_CONTEXT" \
     "mtp_refresh_fraction=$MTP_REFRESH_FRACTION" \
+    "mtp_aux_ce_lambda=$MTP_AUX_CE_LAMBDA" \
+    "mtp_aux_advantage_clip=$MTP_AUX_ADVANTAGE_CLIP" \
     "comparison_log_trajectories=$COMPARISON_LOG_TRAJECTORIES" \
     "final_validation=$FINAL_VALIDATION" \
     "val_before_train=$VAL_BEFORE_TRAIN" \
@@ -452,6 +464,7 @@ printf '│ Train GPUs  %s\n' "$TRAIN_GPUS"
 printf '│ LoRA        rank %s · alpha %s · targets %s\n' "$LORA_RANK" "$LORA_ALPHA" "$TARGET_MODULES_JSON"
 printf '│ Comparison  probe freq %s · cycles %s · context %s · records %s\n' \
     "$MTP_PROBE_FREQ" "$MTP_PROBE_MAX_CYCLES" "$MTP_PROBE_MAX_CONTEXT" "$COMPARISON_LOG_TRAJECTORIES"
+printf '│ Aux CE      lambda %s · advantage clip %s\n' "$MTP_AUX_CE_LAMBDA" "$MTP_AUX_ADVANTAGE_CLIP"
 printf '│ Validation  before %s · final %s · samples %s · periodic %s\n' \
     "$VAL_BEFORE_TRAIN" "$FINAL_VALIDATION" "$VAL_SAMPLES" "$TEST_FREQ"
 printf '│ Run folder  %s\n' "$RUN_DIR"
@@ -609,6 +622,8 @@ TRAIN_COMMAND=(
     "++actor_rollout_ref.model.mtp.comparison_probe_max_context=$MTP_PROBE_MAX_CONTEXT"
     "++actor_rollout_ref.model.mtp.comparison_refresh_fraction=$MTP_REFRESH_FRACTION"
     "++actor_rollout_ref.model.mtp.comparison_log_trajectories=$COMPARISON_LOG_TRAJECTORIES_HYDRA"
+    "++actor_rollout_ref.model.mtp.rollout_aux_ce_lambda=$MTP_AUX_CE_LAMBDA"
+    "++actor_rollout_ref.model.mtp.rollout_aux_advantage_clip=$MTP_AUX_ADVANTAGE_CLIP"
     "++trainer.final_validation=$FINAL_VALIDATION_HYDRA"
     "trainer.val_before_train=$VAL_BEFORE_TRAIN_HYDRA"
     "trainer.save_freq=$SAVE_FREQ"

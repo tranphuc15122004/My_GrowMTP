@@ -90,6 +90,23 @@ bash scripts/run_policy_shift_matching_baseline.sh --gpuid 2,3
 
 The short run is for runtime validation; its scheduler horizon is eight steps, so its results are not a 500-step comparison. `BASELINE_RUN`, `BASELINE_CONFIG` (YAML stem), `GROWMTP_PYTHON`, `TRAIN_STEPS`, and `IDEA_RUN` can override the recorded defaults. This fresh-run helper does not generate the general launcher's `config/resume.sh`. Its printed run path identifies the checkpoints and logs if training is stopped.
 
+### Rollout-advantage auxiliary CE pilot
+
+The alternative loss keeps DCA/VGM and adds CE on target-emitted rollout tokens, weighted by positive trajectory advantage. It uses the same saved baseline config and initial prepared model, disables the exact-KL probe/refresh, and writes to a new `rollout-adv-ce-growmtp-*` run directory. Set `MTP_AUX_CE_LAMBDA` to the fixed coefficient selected from a positive-advantage batch; the initial target is `lambda * ||grad CE|| / ||grad DCA|| ~= 0.1`. The script does not estimate that coefficient automatically. The `0.001` below is only a small, provisional coefficient for runtime checks, not a calibrated value for a quality comparison.
+
+```bash
+# Short launcher/transport check. Responses are capped at 128 tokens.
+MTP_AUX_CE_LAMBDA=0.001 RUN_MODE=smoke \
+  bash scripts/run_rollout_advantage_aux_ce.sh --gpuid 2,3
+
+# Exercise the CE update with the baseline response limit; inspect
+# mtp/aux_ce_positive_cycles and mtp/aux_ce_contribution.
+MTP_AUX_CE_LAMBDA=0.001 RUN_MODE=full TRAIN_STEPS=8 \
+  bash scripts/run_rollout_advantage_aux_ce.sh --gpuid 2,3
+```
+
+The 4-step smoke preset may have no positive-advantage trajectory, in which case auxiliary CE correctly contributes zero. If the 8-step run also has no positive cycles, extend the bounded run until a positive-advantage batch appears; zero CE contribution does not validate its backward path. After choosing a fixed coefficient from a positive-advantage gradient-scale calibration, compare a 30-step auxiliary pilot against a 30-step GrowMTP run with the same GPU count and effective batch, including end-to-end time, acceptance length and reward. Keep the 500-step run for after the pilot shows a plausible net speedup.
+
 ## Stop and resume
 
 Press Ctrl-C or send SIGTERM to the launcher to request a safe stop. The launcher records the request; the trainer finishes its current step, writes a checkpoint, and exits. The launcher prints the resume command:

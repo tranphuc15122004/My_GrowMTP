@@ -57,7 +57,16 @@ def prefill_prefix(head, embed_weight, record, stop, chunk_size=256):
     return clone_prefix(cache)
 
 
-def replay_chunks(head, embed_weight, lm_weight, record, chunk_size=1024, vocab_chunk_size=256):
+def replay_chunks(
+    head,
+    embed_weight,
+    lm_weight,
+    record,
+    chunk_size=1024,
+    vocab_chunk_size=256,
+    *,
+    include_aux_ce=False,
+):
     """Yield disjoint chunk graphs; only recorded prefix constants cross chunks."""
     device = embed_weight.device
     embed_weight, lm_weight = embed_weight.detach(), lm_weight.detach()
@@ -90,7 +99,7 @@ def replay_chunks(head, embed_weight, lm_weight, record, chunk_size=1024, vocab_
                 h = head(h, emb, (pos + depth)[None], cache, replay_mask(pos, stop, depth, h.dtype))
                 outputs.append(h.squeeze(0))
         hidden = torch.stack(outputs, dim=1)
-        loss, alpha = chunked_dca(
+        args = (
             hidden,
             lm_weight,
             record["topk_val"][start:end].to(device),
@@ -98,4 +107,15 @@ def replay_chunks(head, embed_weight, lm_weight, record, chunk_size=1024, vocab_
             record["accept_len"][start:end],
             vocab_chunk_size,
         )
-        yield loss, alpha
+        if include_aux_ce:
+            if "target_tokens" not in record or "target_mask" not in record:
+                raise RuntimeError("Rollout target tokens are missing for auxiliary CE")
+            losses, alpha, aux_ce = chunked_dca(
+                *args,
+                target_ids=record["target_tokens"][start:end].to(device),
+                target_mask=record["target_mask"][start:end].to(device),
+            )
+            yield losses, alpha, aux_ce
+        else:
+            losses, alpha = chunked_dca(*args)
+            yield losses, alpha

@@ -12,6 +12,7 @@ FIELDS = (
     "prefix_hidden",
     "prefix_ids",
 )
+TARGET_FIELDS = ("target_tokens", "target_mask")
 
 
 def logprob_inputs(batch):
@@ -100,21 +101,86 @@ def _prefix_inputs(signal):
     return prefix_hidden, prefix_ids
 
 
-def pack_signals(batch, records):
+def _rollout_targets(signal, response_ids, response_mask):
+    """Map verifier depths to target-emitted response tokens on the committed path."""
+    positions = torch.as_tensor(signal["position"], dtype=torch.int64).cpu()
+    accept_len = torch.as_tensor(signal["accept_len"], dtype=torch.int64).cpu()
+    accepted_tokens = signal.get("accepted_tokens") or []
+    prompt_len = torch.as_tensor(signal["prompt_ids"]).numel()
+    depth = torch.as_tensor(signal["topk_idx"][0]).shape[0]
+    response_ids = torch.as_tensor(response_ids, dtype=torch.int64).cpu()
+    response_mask = torch.as_tensor(response_mask, dtype=torch.bool).cpu()
+    if response_ids.shape != response_mask.shape:
+        raise ValueError("Response tokens and mask must have matching shapes")
+
+    target_tokens = torch.zeros((positions.numel(), depth), dtype=torch.int64)
+    target_mask = torch.zeros((positions.numel(), depth), dtype=torch.bool)
+    for cycle, position in enumerate(positions.tolist()):
+        valid_depth = min(int(accept_len[cycle]), depth)
+        emitted = (torch.as_tensor(accepted_tokens[cycle], dtype=torch.int64)
+                   if cycle < len(accepted_tokens) else None)
+        for offset in range(valid_depth):
+            # The recorded prompt is left-shifted: its final token is the
+            # target's first rollout token, which seeds the draft. Verifier
+            # depth zero predicts the following response token.
+            response_index = position + offset + 2 - prompt_len
+            if response_index < 0 or response_index >= response_ids.numel():
+                continue
+            if response_mask[response_index]:
+                if emitted is not None:
+                    if offset >= emitted.numel() or int(emitted[offset]) != int(response_ids[response_index]):
+                        raise ValueError("Rollout response tokens disagree with verification history")
+                target_tokens[cycle, offset] = response_ids[response_index]
+                target_mask[cycle, offset] = True
+    return target_tokens, target_mask
+
+
+def pack_signals(batch, records, *, include_target_tokens=False):
     """Remove Python-object payloads at the rollout boundary; keep one nested tensor per field."""
     present = [s for s in records if s and len(s.get("position", []))]
     if not present:
         batch["mtp_num_cycles"] = torch.zeros(len(records), dtype=torch.int64)
         return
     prefixes = {id(signal): _prefix_inputs(signal) for signal in present}
-    rows = {key: [] for key in FIELDS}
+    fields = FIELDS + (TARGET_FIELDS if include_target_tokens else ())
+    rows = {key: [] for key in fields}
+    target_rows = None
+    if include_target_tokens:
+        prompts = batch["prompts"].detach().cpu()
+        prompt_mask = batch["attention_mask"][:, :prompts.shape[1]].detach().cpu()
+        responses = batch["responses"].detach().cpu().unbind(0)
+        response_masks = batch["response_mask"].detach().cpu().unbind(0)
+        if (len(prompts) != len(records) or len(responses) != len(records)
+                or len(response_masks) != len(records)):
+            raise ValueError("Rollout records and response rows are misaligned")
+        for i, signal in enumerate(records):
+            if signal and len(signal.get("position", [])):
+                signal_prompt = torch.as_tensor(signal["prompt_ids"], dtype=torch.int64).cpu()
+                rollout_prompt = prompts[i][prompt_mask[i].bool()]
+                if (signal_prompt.numel() != rollout_prompt.numel() or not signal_prompt.numel()
+                        or not bool(response_masks[i][0])
+                        or not torch.equal(signal_prompt[:-1], rollout_prompt[1:])
+                        or int(signal_prompt[-1]) != int(responses[i][0])):
+                    raise ValueError("Auxiliary CE requires the shifted prompt and rollout seed to match")
+        target_rows = [
+            _rollout_targets(signal, responses[i], response_masks[i])
+            if signal and len(signal.get("position", [])) else None
+            for i, signal in enumerate(records)
+        ]
+        target_prototype = next(row for row in target_rows if row is not None)
     counts = []
     prototype = present[0]
-    for signal in records:
+    for row_index, signal in enumerate(records):
         n = len(signal["position"]) if signal else 0
         counts.append(n)
         source = signal if n else prototype
-        for key in FIELDS:
+        for key in fields:
+            if key in TARGET_FIELDS:
+                value = target_rows[row_index][0 if key == "target_tokens" else 1] if n else None
+                if not n:
+                    value = torch.zeros_like(target_prototype[0 if key == "target_tokens" else 1][:1])
+                rows[key].append(value.detach().cpu())
+                continue
             if key.startswith("prefix_"):
                 value = prefixes[id(source)][0 if key == "prefix_hidden" else 1]
             else:
@@ -137,14 +203,16 @@ def unpack_signals(data):
     counts = data["mtp_num_cycles"].detach().cpu().tolist()
     if not any(counts):
         return []
-    rows = {key: data["mtp_" + key].unbind() for key in FIELDS
+    fields = FIELDS + (TARGET_FIELDS if "mtp_target_tokens" in data else ())
+    rows = {key: data["mtp_" + key].unbind() for key in fields
             if key not in ("position", "accept_len")}
     for key in ("position", "accept_len"):
         rows[key] = data["mtp_" + key].detach().cpu().unbind()
     result = []
     for i, n in enumerate(counts):
         if n:
-            row = {key: rows[key][i] for key in FIELDS}
+            row = {key: rows[key][i] for key in fields}
+            row["batch_index"] = i
             if row["position"].numel() != n or row["accept_len"].numel() != n:
                 raise ValueError("Cycle count disagrees with transported records")
             result.append(row)

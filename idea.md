@@ -1,803 +1,193 @@
-# Policy-Shift-Aware GrowMTP
+# Policy-Shift-Aware GrowMTP: hướng cải tiến ít overhead
 
-## 1. Motivation
+## Trạng thái và mục tiêu
 
-GrowMTP train draft head online từ verification signal của target policy hiện tại:
+Có hai phương án cần phân biệt:
 
-$$
-\pi_t
-\rightarrow
-p_t
-\rightarrow
-q_t,
-$$
+1. **Exact-KL selective refresh** là ý tưởng ban đầu, đã được triển khai. Sau PPO, phương án này chạy lại target để đo sự khác biệt giữa policy cũ và mới, chọn trajectory cần refresh, rồi dùng target mới làm teacher cho DCA/VGM.
+2. **Rollout-advantage auxiliary loss** đã được tích hợp vào mã với mặc định tắt. Nó giữ nguyên DCA/VGM và dùng token target đã phát ra trong rollout cùng advantage dương làm tín hiệu phụ cho draft head. Đường train chính không cần chạy target sau PPO. Việc ánh xạ token đã được triển khai, nhưng cần smoke/pilot trên môi trường train để xác nhận runtime.
 
-trong đó $p_t$ là distribution của target verifier và $q_t$ là distribution của draft head.
+Mục tiêu cuối cùng là giảm **thời gian end-to-end của RL post-training** so với GrowMTP gốc trên cùng phần cứng và cấu hình, đồng thời giữ chất lượng policy. Acceptance length tăng nhưng tổng thời gian không giảm thì chưa đạt mục tiêu.
 
-Vấn đề là sau mỗi RL step, target policy được update:
+## 1. Vấn đề cần kiểm chứng
+
+Tại RL step $t$, target $p_t$ sinh rollout và verification signal cho draft $q_\phi$. Policy được cập nhật thành $p_{t+1}$, trong khi draft vừa học từ $p_t$ sẽ được dùng với $p_{t+1}$ ở rollout tiếp theo:
 
 $$
-\pi_t \rightarrow \pi_{t+1}.
-$$
-
-Trong khi draft head vừa được tối ưu để match $p_t$, nó lại được sử dụng ngay với target mới $p_{t+1}$.
-
-Do đó tồn tại một dạng **draft–target staleness**:
-
-$$
-q_t \approx p_t
+q_{\phi,t+1}\approx p_t,
 \qquad
-\text{nhưng inference tiếp theo cần}
-\qquad
-q_t \approx p_{t+1}.
+\text{nhưng rollout tiếp theo dùng }p_{t+1}.
 $$
 
-GrowMTP hiện tại không xử lý trực tiếp sự thay đổi này.
+Đây là độ trễ một bước, **chưa chắc là bottleneck**. Pilot 8 bước của bản exact-KL chỉ đo một trajectory có advantage dương ở step 4, với KL trung bình khoảng $9.37\times10^{-4}$ nat. Cùng step đó, thời gian diagnostic probe khoảng 783 giây; ở step 8 là khoảng 162 giây. Các số này cho thấy chấm lại target có thể rất tốn thời gian, nhưng chưa chứng minh policy shift gây giảm acceptance đáng kể. GrowMTP gốc 500 bước trên server mất khoảng 12 giờ theo log người dùng cung cấp.
 
----
+## 2. Giữ nguyên objective acceptance của GrowMTP
 
-## 2. Core idea
-
-Thay vì chỉ train drafter để khớp với **current policy**, phương pháp đề xuất làm cho drafter thích nghi với **updated/future policy**.
-
-High-level transition:
+Tại vị trí $j$ của verification cycle $c$, gọi $p_{t,c,j}$ và $q_{\phi,c,j}$ là hai phân phối trên **cùng draft-conditioned state**. Xác suất chấp nhận trung bình:
 
 $$
-\boxed{
-\text{Current-policy online distillation}
-\rightarrow
-\text{Policy-shift-aware online distillation}
-}
+\alpha_{c,j}
+=\sum_v\min\{p_{t,c,j}(v),q_{\phi,c,j}(v)\}
+=1-\operatorname{TV}(p_{t,c,j},q_{\phi,c,j}).
 $$
 
-Ý tưởng trung tâm:
-
-> Không phải mọi rollout state đều cần được retrain bằng target mới. Chỉ những state mà target distribution thực sự thay đổi đáng kể sau RL update mới cần refresh supervision.
-
----
-
-## 3. Hai nguồn tín hiệu
-
-Phương pháp sử dụng hai loại tín hiệu bổ sung nhau.
-
-### 3.1 Task signal: Advantage / Reward
-
-GRPO đã cung cấp advantage:
+Với draft depth $K$ và vị trí từ chối đầu tiên $J_c$ ($J_c=K+1$ nếu chấp nhận hết), DCA với Verify-Gated Masking (VGM) là
 
 $$
-A_r
-$$
-
-cho mỗi rollout $r$.
-
-Advantage cho biết trajectory nào policy **được khuyến khích dịch chuyển tới**:
-
-$$
-A_r>0
-\Rightarrow
-\pi_{t+1}(y_r|x)
-\text{ có xu hướng tăng}.
-$$
-
-Ground-truth answer vì vậy không được dùng trực tiếp dưới dạng teacher-forcing CE.
-
-Thay vào đó:
-
-$$
-y^*
-\rightarrow
-R
-\rightarrow
-A.
-$$
-
-Điều này tránh ép drafter bắt chước một reasoning trajectory reference duy nhất.
-
----
-
-### 3.2 Distribution-shift signal: KL
-
-Sau khi policy update:
-
-$$
-\pi_t\rightarrow\pi_{t+1},
-$$
-
-ta đo mức thay đổi thực sự của target:
-
-$$
-D_{r,k}
-=
-D_{\mathrm{KL}}
-\left(
-p_{t+1,r,k}
-\|
-p_{t,r,k}
+DCA_c(q_\phi,p_t)
+=-\log\left(
+  \sum_{\ell=1}^{\min(J_c,K)}
+  \prod_{j=1}^{\ell}\alpha_{c,j}
 \right).
 $$
 
-Advantage trả lời:
+VGM giữ đến **và gồm** vị trí từ chối đầu tiên. GrowMTP hiện đã triển khai draft-path reconstruction, DCA/VGM và xấp xỉ overlap bằng target top-k cộng residual bin; cần tái sử dụng chúng. Chỉ draft head nhận gradient. DCA gắn trực tiếp với số token có thể được chấp nhận. KL ở phương án cũ là **bộ đo policy shift**, không thay thế DCA.
 
-> policy **nên** thay đổi ở đâu?
+## 3. Đối chứng exact-KL selective refresh đã triển khai
 
-KL trả lời:
-
-> policy **thực sự đã** thay đổi ở đâu?
-
-Hai tín hiệu này không trùng nhau.
-
----
-
-# 4. Policy-shift score
-
-Với rollout $r$, định nghĩa average shift:
+Trên các trajectory có advantage dương, phương án cũ đo shift sau PPO:
 
 $$
-D_r
-=
-\frac{1}{K_r}
-\sum_{k=1}^{K_r}
-D_{\mathrm{KL}}
-\left(
-p_{t+1,r,k}
-\|
-p_{t,r,k}
-\right).
+D_r=\frac{1}{N_r}\sum_{(c,j)\in r}
+D_{\mathrm{KL}}\left(p_{t+1,c,j}\|p_{t,c,j}\right),
+\qquad
+S_r=[A_r]_+D_r.
 $$
 
-Sau đó kết hợp với positive advantage:
+Một số trajectory có $S_r$ cao được học bằng teacher $p_{t+1}$; phần còn lại tiếp tục học bằng $p_t$. Preset hiện tại kích hoạt mỗi 4 step và chọn tối đa 25% tổng số trajectory trong batch, chỉ trong nhóm có score dương.
+
+Điểm tốn kém: trước khi biết trajectory nào được chọn, detector vẫn phải chấm lại target trên **mọi cycle của các trajectory advantage dương**. Giới hạn cycle của diagnostic probe không giới hạn detector này; chọn 25% không đồng nghĩa chỉ trả 25% chi phí target forward. Phương án này là đối chứng để đo shift thực, nhưng chỉ có ích cho tăng tốc nếu gain rollout bù được chi phí detector, probe và refresh.
+
+## 4. Phương án mới: DCA cộng CE từ token rollout có advantage dương
+
+Gọi $y_{c,j}$ là **token target thực sự phát ra** tại draft-conditioned state $s_{c,j}$; $r(c)$ là trajectory chứa cycle $c$. Token này không phải ground-truth answer và không nhất thiết bằng draft proposal. Tại vị trí từ chối đầu tiên của một cycle, $y_{c,j}$ là token sửa từ phân phối residual.
+
+Với speculative rejection sampling đúng, tại một state đã đi tới, token đầu ra có phân phối biên $p_t$:
 
 $$
-\boxed{
-S_r
-=
-g(A_r)\,D_r
-}
+\Pr(Y=y,\text{accept})=\min\{p_t(y),q(y)\},
+\qquad
+\Pr(Y=y,\text{reject})=[p_t(y)-q(y)]_+,
 $$
 
-với một lựa chọn đơn giản:
-
 $$
-g(A_r)=\max(\hat A_r,0).
+\Pr(Y=y)=p_t(y).
 $$
 
-Hoặc nếu muốn ổn định hơn:
+Vì vậy ta có thể dùng rollout đã có làm nguồn token target. Đặt advantage không âm có chặn:
 
 $$
-g(A_r)=\sigma(\beta\hat A_r).
+w_r=\min\{\max(A_r,0),A_{\max}\}.
 $$
 
-Interpretation:
+Với $L_c=\min(J_c,K)$, CE được **lấy trung bình trong từng cycle**:
 
 $$
-S_r\text{ cao}
+CE_c(q_\phi,y)
+=-\frac{1}{L_c}\sum_{j=1}^{L_c}
+\log q_\phi(y_{c,j}\mid s_{c,j}).
 $$
 
-khi:
-
-1. trajectory có ích đối với RL objective;
-2. target distribution sau update thực sự khác target cũ.
-
-Đây chính là những samples mà GrowMTP supervision cũ dễ trở nên stale nhất.
-
----
-
-# 5. Selective Future-Policy Refresh
-
-Không recompute $p_{t+1}$ cho toàn bộ rollout vì overhead sẽ lớn.
-
-Chỉ chọn:
-
-$$
-\mathcal R_{\text{refresh}}
-=
-\operatorname{TopR}(S_r)
-$$
-
-ví dụ top $25\%$.
-
-Đối với sample không cần refresh:
-
-$$
-r\notin\mathcal R_{\text{refresh}},
-$$
-
-tiếp tục dùng GrowMTP bình thường:
-
-$$
-L_r
-=
-L_{\mathrm{DCA}}^{\mathrm{VGM}}
-(q_r,p_{t,r}).
-$$
-
-Đối với sample policy đã shift mạnh:
-
-$$
-r\in\mathcal R_{\text{refresh}},
-$$
-
-recompute updated verifier signal:
-
-$$
-p_{t+1,r}
-$$
-
-và train drafter bằng:
+Khi GrowMTP lấy trung bình theo cycle, loss đề xuất là
 
 $$
 \boxed{
-L_r
-=
-L_{\mathrm{DCA}}^{\mathrm{VGM}}
-(q_r,p_{t+1,r})
+L_{\mathrm{draft}}
+=\frac{1}{|\mathcal C|}\sum_{c\in\mathcal C}
+\left[DCA_c(q_\phi,p_t)+\lambda w_{r(c)}CE_c(q_\phi,y)\right].
 }
 $$
 
-Thay vì học teacher cũ:
+Nếu cấu hình hiện tại lấy trung bình theo trajectory thì **cả hai hạng tử phải dùng cùng phép gộp**. Không chia tiếp cho số trajectory có advantage dương: nếu chỉ có một trajectory dương, phép chia ấy sẽ khuếch đại tín hiệu của nó. Khi mọi $A_r=0$, auxiliary bằng 0 và loss trở về GrowMTP gốc. Target distribution, token rollout, advantage và backbone hidden state đều được detach; objective PPO/GRPO của actor giữ nguyên.
 
-$$
-q_t\rightarrow p_t,
-$$
-
-drafter học trực tiếp:
-
-$$
-\boxed{
-q_t\rightarrow p_{t+1}
-}
-$$
-
-ở những nơi cần thiết.
-
----
-
-# 6. Tại sao vẫn giữ DCA?
-
-Không nên thay DCA bằng KL.
-
-Speculative acceptance liên hệ trực tiếp với distribution overlap:
-
-$$
-\alpha_k
-=
-1-\mathrm{TV}(p_k,q_k).
-$$
-
-Expected accepted length phụ thuộc theo chuỗi:
-
-$$
-E[A]
-=
-\sum_l
-\prod_{k=1}^{l}\alpha_k.
-$$
-
-DCA được thiết kế để optimize cấu trúc này.
-
-Vì vậy:
-
-$$
-\boxed{
-\text{DCA = acceptance objective}
-}
-$$
-
-trong khi:
-
-$$
-\boxed{
-\text{KL = policy-shift detector}
-}
-$$
-
-Đây là phân vai sạch nhất.
-
----
-
-# 7. Final training objective
-
-Một formulation đơn giản:
-
-$$
-\tilde p_r
-=
-\begin{cases}
-p_{t+1,r},
-&
-r\in\mathcal R_{\text{refresh}}
-\\[4pt]
-p_{t,r},
-&
-\text{otherwise}.
-\end{cases}
-$$
-
-Sau đó:
-
-$$
-\boxed{
-L_{\text{PS-GrowMTP}}
-=
-\frac{1}{|\mathcal B|}
-\sum_{r\in\mathcal B}
-L_{\mathrm{DCA}}^{\mathrm{VGM}}
-(q_r,\tilde p_r)
-}
-$$
-
-Không cần thêm một loss phức tạp.
-
-Điểm mới nằm ở **teacher selection/training protocol**, không nằm chủ yếu ở việc thêm một term vào objective.
-
----
-
-# 8. Full pipeline
-
-$$
-\boxed{
-\begin{aligned}
-&\textbf{1. Rollout with } \pi_t\\
-&\qquad\downarrow\\
-&\text{collect draft paths + }p_t+A\\
-&\qquad\downarrow\\
-&\textbf{2. RL update}\\
-&\pi_t\rightarrow\pi_{t+1}\\
-&\qquad\downarrow\\
-&\textbf{3. Estimate policy shift}\\
-&D_{\mathrm{KL}}(p_{t+1}\|p_t)\\
-&\qquad\downarrow\\
-&\textbf{4. Compute }S=A\times KL\\
-&\qquad\downarrow\\
-&\textbf{5. Select high-shift trajectories}\\
-&\qquad\downarrow\\
-&\textbf{6. Refresh }p_{t+1}\text{ only for selected samples}\\
-&\qquad\downarrow\\
-&\textbf{7. DCA + VGM drafter update}\\
-&\qquad\downarrow\\
-&q_{t+1}
-\end{aligned}
-}
-$$
-
----
-
-# 9. Efficient variant
-
-Để không phá end-to-end gain, không nhất thiết refresh ở mọi RL step.
-
-Có thể dùng:
-
-$$
-M=4
-$$
-
-tức chỉ làm future refresh mỗi 4 steps.
-
-Ví dụ:
-
-```text
-step 1: standard GrowMTP
-step 2: standard GrowMTP
-step 3: standard GrowMTP
-step 4: policy-shift refresh
-
-step 5: standard GrowMTP
-...
-```
-
-Và mỗi refresh chỉ chọn:
-
-$$
-r=25\%
-$$
-
-samples.
-
-Do đó overhead:
-
-$$
-C_{\text{refresh}}
-\ll
-C_{\text{full recomputation}}.
-$$
-
-Đây là phần quan trọng vì contribution cuối cùng phải cải thiện:
-
-$$
-\text{net E2E training time},
-$$
-
-không chỉ acceptance.
-
----
-
-# 10. Có nên dùng ground-truth CE nữa không?
-
-Không nên đặt nó vào core method.
-
-Một auxiliary variant có thể thử:
-
-$$
-L
-=
-L_{\mathrm{PS-GrowMTP}}
-+
-\lambda L_{\mathrm{GT}},
-$$
-
-nhưng chỉ để ablation.
-
-Lý do:
-
-$$
-\text{correct answer}
-\neq
-\text{unique correct reasoning trajectory}.
-$$
-
-Đặc biệt với Math và Code, nhiều trajectory khác nhau đều đúng.
-
-Direct CE có thể khiến:
-
-$$
-q
-$$
-
-dịch khỏi:
-
-$$
-p_{\text{target}},
-$$
-
-làm acceptance giảm.
-
-Vì vậy ground truth nên đi gián tiếp qua:
-
-$$
-\boxed{
-y^*
-\rightarrow reward
-\rightarrow advantage
-\rightarrow selection
-}
-$$
-
-thay vì:
-
-$$
-y^*
-\rightarrow CE(q,y^*).
-$$
-
----
-
-# 11. Core contribution
-
-Contribution không nên được mô tả là:
-
-> We improve the GrowMTP loss.
-
-Mà là:
-
-> **GrowMTP distills the drafter from the current target policy even though that policy is immediately updated by RL. We identify this supervision staleness and introduce policy-shift-aware online draft training that selectively refreshes the draft teacher using the updated target distribution.**
-
-Ba contribution cụ thể:
-
-### C1. Draft-policy staleness
-
-Xác định mismatch:
-
-$$
-q_t\approx p_t
-\qquad\text{while}\qquad
-q_t\text{ serves }p_{t+1}.
-$$
-
-### C2. Policy-shift-aware supervision
+### Trực giác về hướng dịch chuyển
 
-Dùng:
+Ở mức logit của một state đơn lẻ, policy gradient theo token rollout $y$ có hướng xấp xỉ
 
 $$
-A_r
+\Delta z^p_v\propto A_r
+\left(\mathbf 1[v=y]-p_t(v\mid s)\right).
 $$
 
-và:
+Gradient của CE lên draft logit là
 
 $$
-KL(p_{t+1}\|p_t)
+\frac{\partial[-w_r\log q_\phi(y\mid s)]}{\partial z^q_v}
+=w_r\left(q_\phi(v\mid s)-\mathbf 1[v=y]\right).
 $$
 
-để xác định supervision nào thực sự stale.
+Nếu $q_\phi\approx p_t$, giảm CE trên trajectory có $A_r>0$ có thể đẩy draft theo hướng policy được khuyến khích di chuyển. Đây chỉ là **proxy của policy shift**, không tái tạo chính xác $p_{t+1}$: PPO clipping, regularization, tham số chung giữa các state và trajectory advantage âm đều ảnh hưởng đến cập nhật target thực. DCA vẫn neo draft vào toàn bộ phân phối target cũ, tránh CE ép quá mạnh vào một token.
 
-### C3. Selective future-policy refresh
+## 5. Cân bằng scale của hai loss
 
-Chỉ recompute updated supervision cho một subset có giá trị cao, giữ overhead thấp.
+Không chọn $\lambda$ bằng cách so hai giá trị scalar. DCA có thể âm khi tổng acceptance-chain lớn hơn 1; CE luôn không âm. Tổng CE theo token cũng không được ghép với DCA trung bình theo cycle, vì batch có nhiều vị trí hợp lệ sẽ vô tình tăng trọng số auxiliary.
 
----
+Trên **một batch hiệu chuẩn có advantage dương**, đo gradient theo tham số draft head $\phi$:
 
-# 12. Metric mới cần report
-
-Ngoài acceptance length:
-
-$$
-\tau,
-$$
-
-nên đo trực tiếp mechanism.
-
-## Draft-policy lag
-
-Trước policy update:
-
-$$
-\tau_{\text{pre}}
-=
-\tau(q_t,p_t).
-$$
-
-Sau update:
-
-$$
-\tau_{\text{post}}
-=
-\tau(q_t,p_{t+1}).
-$$
-
-Định nghĩa:
-
-$$
-\boxed{
-\Delta_{\text{lag}}
-=
-\tau_{\text{pre}}
--
-\tau_{\text{post}}
-}
-$$
-
-GrowMTP baseline kỳ vọng:
-
-$$
-\Delta_{\text{lag}}>0.
-$$
-
-Method cần làm:
-
-$$
-\boxed{
-\Delta_{\text{lag}}\downarrow.
-}
-$$
-
-Đây là metric rất quan trọng vì nó trực tiếp kiểm chứng claim của method.
-
----
-
-# 13. Metrics cuối cùng
-
-Cần report đồng thời:
-
-$$
-\boxed{
-\begin{aligned}
-&\tau &&\text{acceptance length}\\
-&\alpha_k &&\text{per-position acceptance}\\
-&\Delta_{\text{lag}} &&\text{policy-draft staleness}\\
-&T_{\text{gen}} &&\text{rollout time}\\
-&T_{\text{step}} &&\text{E2E RL step time}\\
-&\text{throughput} &&\text{tokens/s/GPU}\\
-&\text{reward/task accuracy} &&\text{policy quality}\\
-&C_{\text{refresh}} &&\text{extra overhead}
-\end{aligned}
-}
-$$
-
-Objective cuối cùng không phải:
-
-$$
-\max\tau
-$$
-
-mà là:
-
-$$
-\boxed{
-\max
-\frac{\text{useful accepted tokens}}
-{\text{total training-system cost}}
-}
-$$
-
----
-
-# 14. Experiment roadmap
-
-## Phase 0 — LoRA baseline
-
-$$
-\text{GrowMTP + LoRA}
-$$
-
-xác nhận pipeline chạy đúng.
-
----
-
-## Phase 1 — Cheap probe
-
-So sánh:
-
-$$
-\text{DCA}
-$$
-
-vs:
-
 $$
-A\times DCA.
+g_D=\|\nabla_\phi L_{\mathrm{DCA}}\|_2,
+\qquad
+g_C=\|\nabla_\phi L_{\mathrm{CE,weighted}}\|_2,
+\qquad
+\rho=\frac{\lambda g_C}{g_D+\epsilon}.
 $$
 
-Chỉ 30–50 steps.
+Điểm bắt đầu để thử: $\rho\approx0.1$, tức $\lambda_0\approx0.1g_D/(g_C+\epsilon)$, rồi **giữ cố định $\lambda_0$** trong pilot. Có thể thử thêm $\rho\approx0.2$ nếu tín hiệu phụ quá yếu. Đây là hyperparameter giả thuyết, chưa phải giá trị tối ưu. Không hiệu chuẩn từ batch không có trajectory advantage dương hoặc có $g_C$ gần 0. Cố định $A_{\max}$ trước khi so sánh; mức chặn 2 là một điểm khởi đầu có thể thử với GRPO advantage đã chuẩn hóa.
 
-Mục đích không phải contribution mà để kiểm tra task signal có hữu ích hay không.
+Đặt $d=\nabla_\phi L_{\mathrm{DCA}}$ và $c=\nabla_\phi L_{\mathrm{CE,weighted}}$. Với SGD, nếu $\lambda\|c\|\leq\rho\|d\|$ và $\rho<1$ thì
 
----
-
-## Phase 2 — Mechanism validation
-
-Log:
-
-$$
-A,
-\quad
-KL(p_{t+1}\|p_t),
-\quad
-TV(p_t,q),
-\quad
-\alpha_k.
-$$
-
-Kiểm tra:
-
-$$
-KL\uparrow
-\Rightarrow
-\Delta_{\text{lag}}\uparrow?
-$$
-
-Nếu không có relation, dừng hướng này.
-
----
-
-## Phase 3 — Core method
-
-Triển khai:
-
-$$
-\boxed{
-\text{Selective Policy-Shift Refresh}
-}
-$$
-
-với:
-
-$$
-25\%
-$$
-
-samples mỗi:
-
-$$
-4
-$$
-
-steps.
-
----
-
-## Phase 4 — Ablation
-
-So sánh:
-
-$$
-\begin{aligned}
-&\text{GrowMTP}\\
-&+\text{Advantage weighting}\\
-&+\text{KL-only selection}\\
-&+\text{Advantage + KL selection}\\
-&+\text{full future refresh}\\
-&+\text{selective future refresh}.
-\end{aligned}
-$$
-
----
-
-# 15. Hypothesis chính
-
-### H1
-
-RL update tạo ra measurable target-distribution shift:
-
-$$
-KL(p_{t+1}\|p_t)>0.
-$$
-
-### H2
-
-Policy shift này gây giảm speculative compatibility:
-
 $$
-KL(p_{t+1}\|p_t)\uparrow
-\Rightarrow
-\tau(q_t,p_{t+1})\downarrow.
+d^\top(d+\lambda c)\geq(1-\rho)\|d\|^2>0.
 $$
-
-### H3
 
-Refresh supervision bằng updated policy giảm draft-policy lag:
+Tức là bước cập nhật vẫn giảm DCA ở bậc một trên batch hiệu chuẩn, dù hai gradient ngược hướng. Đây **không phải bảo đảm cho Adam**, gradient clipping hoặc các batch tiếp theo. Chỉ đo tỷ lệ và cosine gradient trên một số batch trong pilot; không chạy hai backward riêng ở mọi step của full train vì sẽ làm mất lợi thế tốc độ.
 
-$$
-\Delta_{\text{lag}}^{\text{ours}}
-<
-\Delta_{\text{lag}}^{\text{GrowMTP}}.
-$$
+## 6. Ràng buộc triển khai tối thiểu
 
-### H4
+- Giữ nguyên draft-path reconstruction, VGM, target top-k/residual overlap, DCA và optimizer group. CE nên tái sử dụng draft logits đã được chiếu lên vocabulary khi tính DCA. Cần đo chi phí thực tế vì checkpoint/recompute có thể làm tăng overhead.
+- Xác nhận $y_{c,j}$ khớp chính xác với $s_{c,j}$, đặc biệt tại vị trí từ chối đầu tiên, cycle cuối và khi response bị cắt. Bonus token khi chấp nhận hết không có draft logit tương ứng trong $K$ vị trí thì không dùng. Không dùng draft proposal thay cho token target phát ra.
+- Khi auxiliary bật, signal transport bổ sung $y_{c,j}$ và mask bằng response index $position+j+2-prompt\_length$ với $j$ bắt đầu từ 0. Prompt trong signal đã dịch trái và chứa token rollout đầu tiên làm seed; depth đầu dự đoán token rollout thứ hai. Mask giao với VGM và response mask. Smoke/pilot vẫn cần xác nhận runtime cho các trường hợp accept, reject và truncate.
+- Bật/tắt auxiliary bằng config, mặc định tắt để GrowMTP gốc không đổi. Không kết hợp auxiliary với exact-KL refresh trong thí nghiệm đầu tiên: cần tách tác dụng và chi phí của từng phương án.
 
-Selective refresh đạt gần gain của full refresh nhưng với overhead thấp hơn:
+## 7. So sánh và tiêu chí quyết định
 
-$$
-Gain_{\text{selective}}
-\approx
-Gain_{\text{full}}
-$$
+So sánh từ **cùng checkpoint ban đầu**, cùng dữ liệu, seed, effective batch, GPU, giới hạn response và lịch validation:
 
-trong khi:
+| Nhánh | Loss draft | Chạy lại target sau PPO |
+|---|---|---|
+| GrowMTP gốc | DCA/VGM | Không |
+| Exact-KL refresh đã có | DCA/VGM với teacher chọn lọc $p_{t+1}$ | Có |
+| Đề xuất ít overhead | DCA/VGM $+\lambda w_r CE$ | Không trong train chính |
 
-$$
-Cost_{\text{selective}}
-\ll
-Cost_{\text{full}}.
-$$
+Trước hết chạy pilot 30–50 step cho GrowMTP gốc và phương án auxiliary; chỉ chạy 500 step nếu pilot cho thấy khả năng cải thiện. Diagnostic KL nếu cần nên chạy cùng lịch ở mọi nhánh hoặc tách khỏi phép đo tốc độ. Không suy ra thời gian full train chỉ từ các step đầu vì draft head còn trong giai đoạn khởi động.
 
-### H5
+Log tối thiểu: DCA, auxiliary CE, $\lambda$, positive-advantage fraction, tỷ lệ/cosine gradient trên batch đo, acceptance length và $\alpha_j$, rollout time, head-update time, end-to-end step time, reward/accuracy, response clipping và tỷ lệ step có policy-gradient loss khác 0.
 
-Giảm policy-draft lag chuyển thành:
+Để nghiên cứu policy shift trên một tập diagnostic nhỏ, có thể đo acceptance-chain surrogate trên **cùng fixed states**:
 
 $$
-\tau\uparrow
-\rightarrow
-T_{\text{rollout}}\downarrow
-\rightarrow
-T_{\text{RL}}\downarrow.
+\widetilde\tau(q,p)
+=\sum_{\ell=1}^{K}\prod_{j=1}^{\ell}
+[1-\operatorname{TV}(q_j,p_j)],
+\qquad
+\Delta_{\mathrm{lag}}
+=\widetilde\tau(q,p_t)-\widetilde\tau(q,p_{t+1}).
 $$
-
----
 
-# 16. Final high-level statement
+Đây là surrogate chẩn đoán tốn thêm target forward, **không phải** acceptance length quan sát trực tiếp trong rollout kế tiếp; không cần đo mỗi train step.
 
-Phương pháp có thể được cô đọng thành:
+**Điều kiện thành công:** thời gian end-to-end 500 step thấp hơn GrowMTP gốc trong điều kiện tương đương, không giảm chất lượng policy đáng kể và gain rollout lớn hơn chi phí auxiliary. Nếu acceptance không cải thiện hoặc CE thường xuyên xung đột mạnh với DCA, giảm $\lambda$ hoặc bỏ auxiliary. KL pilot nhỏ cũng có thể cho thấy staleness không phải bottleneck; đó là kết quả nghiên cứu hợp lệ.
 
-$$
-\boxed{
-\textbf{Train the drafter for the policy it will serve, not only the policy that generated its supervision.}
-}
-$$
-
-GrowMTP:
-
-$$
-\text{current-policy distillation}.
-$$
+## 8. Giả thuyết cần kiểm chứng
 
-Phương pháp đề xuất:
+1. Token rollout có advantage dương cho draft một tín hiệu xấp xỉ hướng policy update mà không chạy lại target.
+2. Khi giữ gradient auxiliary nhỏ so với DCA, tín hiệu này cải thiện acceptance trên rollout sau PPO.
+3. Gain rollout, nếu có, lớn hơn chi phí loss phụ và tạo ra **net end-to-end speedup** so với GrowMTP gốc.
 
-$$
-\boxed{
-\text{policy-shift-aware future-policy distillation}.
-}
-$$
+Không giả định các giả thuyết này đúng. Exact-KL vẫn là đối chứng để đo shift thực; auxiliary là hướng ưu tiên nghiên cứu khi mục tiêu chính là tăng tốc post-training.
 
-Reward/advantage cho biết **hướng dịch chuyển có giá trị**, KL đo **mức dịch chuyển thực tế**, selective refresh lấy supervision từ **updated target**, còn DCA tiếp tục đảm bảo objective phù hợp với speculative acceptance.
+## Tài liệu tham khảo
 
-Đây là phiên bản mà tôi nghĩ nên khóa làm hướng chính để triển khai.
+- GrowMTP, công thức DCA/VGM và phân tích độ trễ policy: https://arxiv.org/abs/2609.16648
+- PPO, objective policy-gradient có clipping: https://arxiv.org/abs/1707.06347
+- GradNorm, động cơ cân loss theo gradient thay vì giá trị scalar: https://proceedings.mlr.press/v80/chen18a.html
