@@ -43,8 +43,6 @@ try:
     if _is_npu and envs.SGLANG_ZBAL_LOCAL_MEM_SIZE.get() > 0:
         from zbal.zbal.deepep_adaptor import Config
         from zbal.zbal_buffer import Buffer
-    else:
-        from deep_ep import Buffer, Config
 
     if not _is_npu:
         from sglang.srt.layers.quantization.fp8_kernel import (
@@ -63,6 +61,21 @@ import torch.distributed as dist
 _use_aiter = get_bool_env_var("SGLANG_USE_AITER") and is_hip()
 
 logger = logging.getLogger(__name__)
+
+
+def _ensure_deepep_loaded() -> None:
+    global Buffer, Config
+    if not use_deepep:
+        raise ImportError(
+            "DeepEP is not installed. Please install DeepEP package from "
+            "https://github.com/deepseek-ai/deepep."
+        )
+    if "Buffer" not in globals():
+        # Dense models import this module through SGLang's dispatcher registry.
+        # Loading DeepEP here avoids its NCCL check until expert parallelism is used.
+        from deep_ep import Buffer as buffer_type, Config as config_type
+
+        Buffer, Config = buffer_type, config_type
 
 
 def _deepep_precompile_tp_barrier() -> None:
@@ -163,6 +176,7 @@ class DeepEPBuffer:
         num_max_dispatch_tokens_per_rank: int = -1,
         num_experts: int = -1,
     ):
+        _ensure_deepep_loaded()
         if cls._buffer is not None:
             return cls._buffer
 
@@ -276,6 +290,7 @@ class DeepEPConfig(BaseDispatcherConfig):
     _instance = None
 
     def __init__(self):
+        _ensure_deepep_loaded()
         config_str = get_deepep_config()
         if config_str:
             config_parsed = load_json_config(config_str)
@@ -313,11 +328,7 @@ class _DeepEPDispatcherImplBase:
         params_dtype: torch.dtype,
         deepep_mode: DeepEPMode,
     ):
-        if not use_deepep:
-            raise ImportError(
-                "DeepEP is not installed. Please install DeepEP package from "
-                "https://github.com/deepseek-ai/deepep."
-            )
+        _ensure_deepep_loaded()
 
         self.group = group
         self.router_topk = router_topk
