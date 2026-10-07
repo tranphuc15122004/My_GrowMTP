@@ -95,12 +95,13 @@ def audit_prompt_lengths(rows: list[dict], tokenizer, max_prompt_length: int) ->
     if max_prompt_length < 1:
         raise ValueError("max_prompt_length must be a positive integer")
     lengths = []
-    for row in rows:
+    for row in tqdm(rows, desc="Auditing prompt tokens"):
         token_ids = tokenizer.apply_chat_template(
             row["prompt"],
             tokenize=True,
             add_generation_prompt=True,
             enable_thinking=False,
+            return_dict=False,
         )
         if hasattr(token_ids, "tolist"):
             token_ids = token_ids.tolist()
@@ -120,6 +121,8 @@ def audit_prompt_lengths(rows: list[dict], tokenizer, max_prompt_length: int) ->
     if maximum > max_prompt_length:
         raise ValueError(
             f"Prompt length {maximum} exceeds max_prompt_length={max_prompt_length}; "
+            f"p95={audit['p95_prompt_tokens']}, "
+            f"over_limit={sum(length > max_prompt_length for length in lengths)}/{len(lengths)}; "
             "increase the limit and audit again before training"
         )
     return audit

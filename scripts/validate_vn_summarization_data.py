@@ -33,17 +33,50 @@ def validate_manifest(path: Path, expected_seed: int, max_prompt_length: int) ->
     return manifest
 
 
+def refresh_prompt_audit(path: Path, manifest: dict, tokenizer_path: str, max_prompt_length: int) -> dict:
+    """Recount existing Parquet prompts and atomically replace only manifest metadata."""
+    import pyarrow.parquet as pq
+    from transformers import AutoTokenizer
+    from prepare_vn_summarization import audit_prompt_lengths
+
+    rows = []
+    for filename, count_key in (("train.parquet", "train_rows"), ("validation.parquet", "validation_rows")):
+        split_rows = pq.read_table(path.parent / filename, columns=["prompt"]).to_pylist()
+        if len(split_rows) != manifest[count_key]:
+            raise ValueError(f"{filename} row count does not match {count_key} in the manifest")
+        rows.extend(split_rows)
+    tokenizer = AutoTokenizer.from_pretrained(tokenizer_path, trust_remote_code=False)
+    audit = audit_prompt_lengths(rows, tokenizer, max_prompt_length)
+    audit["tokenizer"] = tokenizer_path
+    manifest["prompt_audit"] = audit
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    temporary.replace(path)
+    return manifest
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--seed", type=int, required=True)
     parser.add_argument("--max-prompt-length", type=int, required=True)
+    parser.add_argument(
+        "--refresh-prompt-audit", action="store_true",
+        help="Recount train.parquet and validation.parquet beside the manifest; update audit metadata",
+    )
+    parser.add_argument("--tokenizer", help="Tokenizer path required with --refresh-prompt-audit")
     args = parser.parse_args()
     if args.max_prompt_length < 1:
         parser.error("--max-prompt-length must be positive")
+    if args.refresh_prompt_audit and not args.tokenizer:
+        parser.error("--refresh-prompt-audit requires --tokenizer")
     try:
         manifest = validate_manifest(args.manifest, args.seed, args.max_prompt_length)
-    except ValueError as exc:
+        if args.refresh_prompt_audit:
+            manifest = refresh_prompt_audit(
+                args.manifest, manifest, args.tokenizer, args.max_prompt_length
+            )
+    except (ValueError, OSError) as exc:
         parser.error(str(exc))
     audit = manifest["prompt_audit"]
     print(

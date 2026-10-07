@@ -6,6 +6,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 from datasets import load_dataset
@@ -78,10 +79,11 @@ def test_prompt_audit_uses_chat_template_and_rejects_over_limit():
     assert callable(audit_prompt_lengths), "prompt tokenizer audit is required before B200 training"
 
     class FakeTokenizer:
-        def apply_chat_template(self, messages, *, tokenize, add_generation_prompt, enable_thinking):
+        def apply_chat_template(self, messages, *, tokenize, add_generation_prompt, enable_thinking, return_dict):
             assert tokenize is True
             assert add_generation_prompt is True
             assert enable_thinking is False
+            assert return_dict is False
             return list(range(len(messages[0]["content"].split()) + 3))
 
     rows = [convert_record({"id": "1", "text": "một hai ba", "summary": "tóm tắt"}, 1)]
@@ -92,6 +94,78 @@ def test_prompt_audit_uses_chat_template_and_rejects_over_limit():
 
     with pytest.raises(ValueError, match="exceeds max_prompt_length"):
         audit_prompt_lengths(rows, FakeTokenizer(), max_prompt_length=4)
+
+
+@pytest.fixture
+def local_chat_tokenizer(tmp_path):
+    from tokenizers import Tokenizer, models, pre_tokenizers
+    from transformers import PreTrainedTokenizerFast
+
+    backend = Tokenizer(models.WordLevel({"[UNK]": 0}, unk_token="[UNK]"))
+    backend.pre_tokenizer = pre_tokenizers.Whitespace()
+    tokenizer = PreTrainedTokenizerFast(tokenizer_object=backend, unk_token="[UNK]")
+    tokenizer.chat_template = "{% for message in messages %}{{ message['content'] }}{% endfor %}"
+    tokenizer.save_pretrained(tmp_path / "tokenizer")
+    return tokenizer, tmp_path / "tokenizer"
+
+
+def test_prompt_audit_counts_token_ids_with_transformers_dictionary_default(local_chat_tokenizer):
+    tokenizer, _ = local_chat_tokenizer
+    module = runpy.run_path(str(PREPARE))
+    rows = [module["convert_record"]({"id": "1", "text": "Bài báo tiếng Việt.", "summary": "Tóm tắt."}, 1)]
+    expected_ids = tokenizer.apply_chat_template(
+        rows[0]["prompt"], tokenize=True, add_generation_prompt=True,
+        enable_thinking=False, return_dict=False,
+    )
+    audit = module["audit_prompt_lengths"](rows, tokenizer, max_prompt_length=1000)
+    assert audit["max_prompt_tokens"] == len(expected_ids)
+    assert audit["max_prompt_tokens"] > 2
+    with pytest.raises(ValueError, match="exceeds max_prompt_length"):
+        module["audit_prompt_lengths"](rows, tokenizer, max_prompt_length=3)
+
+
+def _existing_audit_dataset(tmp_path, tokenizer_path):
+    data_dir = tmp_path / "prepared"
+    data_dir.mkdir()
+    module = runpy.run_path(str(PREPARE))
+    for index, filename in enumerate(("train.parquet", "validation.parquet"), 1):
+        row = module["convert_record"]({
+            "id": str(index), "text": f"Bài báo tiếng Việt số {index}.", "summary": "Tóm tắt."
+        }, index)
+        pq.write_table(pa.Table.from_pylist([row], schema=module["SCHEMA"]), data_dir / filename)
+    manifest_path = data_dir / "manifest.json"
+    manifest_path.write_text(json.dumps({
+        "seed": 23, "train_rows": 1, "validation_rows": 1,
+        "prompt_audit": {"max_prompt_tokens": 2, "tokenizer": str(tokenizer_path)},
+    }))
+    return data_dir, manifest_path
+
+
+@pytest.mark.parametrize("limit", [3, 1000])
+def test_manifest_prompt_reaudit_preserves_parquet_and_rejects_overlong(
+    tmp_path, local_chat_tokenizer, limit
+):
+    _, tokenizer_path = local_chat_tokenizer
+    data_dir, manifest_path = _existing_audit_dataset(tmp_path, tokenizer_path)
+    original_manifest = manifest_path.read_bytes()
+    original_parquet = {name: (data_dir / name).read_bytes() for name in ("train.parquet", "validation.parquet")}
+    result = subprocess.run([
+        sys.executable, str(ROOT / "scripts" / "validate_vn_summarization_data.py"),
+        "--manifest", str(manifest_path), "--seed", "23", "--max-prompt-length", str(limit),
+        "--refresh-prompt-audit", "--tokenizer", str(tokenizer_path),
+    ], text=True, capture_output=True, check=False)
+    assert all((data_dir / name).read_bytes() == content for name, content in original_parquet.items())
+    if limit == 3:
+        assert result.returncode != 0
+        assert "exceeds max_prompt_length" in result.stderr
+        assert manifest_path.read_bytes() == original_manifest
+    else:
+        assert result.returncode == 0, result.stderr
+        manifest = json.loads(manifest_path.read_text())
+        assert manifest["seed"] == 23
+        assert manifest["train_rows"] == manifest["validation_rows"] == 1
+        assert manifest["prompt_audit"]["max_prompt_tokens"] > 2
+        assert manifest["prompt_audit"]["prompt_count"] == 2
 
 
 def test_manifest_validator_rejects_seed_mismatch_and_missing_prompt_audit(tmp_path):
