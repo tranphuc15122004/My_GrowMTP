@@ -15,7 +15,7 @@ from pathlib import Path
 
 
 COMPACT_LINE = re.compile(
-    r"GROWMTP_STEP|GrowMTP|Qwen3|TaskRunner hostname|Total training steps|"
+    r"GROWMTP_STEP|Training Progress|GrowMTP|Qwen3|TaskRunner hostname|Total training steps|"
     r"Size of train dataloader|Resolved training config saved|Preparing |Resuming |Checkpoint|checkpoint|"
     r"suspend|Suspended|complete|Final validation|Initial validation|"
     r"warning|warn:|error|exception|failed|traceback|CUDA devices|Visible GPUs",

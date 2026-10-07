@@ -62,9 +62,16 @@ Ray uses a short per-process path under /tmp by default to stay below the Unix s
 
 `LOG_LEVEL` controls the terminal view:
 
-- `compact` (default): one step summary with progress, reward, policy and GrowMTP loss, learning rate, speed, step time, GPU memory, and MTP acceptance.
+- `compact` (default): one step summary with reward, policy and GrowMTP loss, learning rate, speed, step time, GPU memory, and MTP acceptance, plus a training progress bar with elapsed time and ETA.
 - `normal`: all trainer output, including the full scalar metric line for each step.
 - `debug`: all trainer output plus the complete resolved configuration.
+
+The existing trainer `tqdm` bar updates after each completed step and estimates
+remaining time from its observed step rate. On resume it starts at the saved
+step and measures the new session's rate. ETA initially shows `?` and settles
+as steps finish; initialization and initial validation occur before the bar.
+With `nohup`, redirection, or `tail -F`, progress updates appear as ordinary log
+lines with explicit `elapsed` and `ETA` labels.
 
 Every scalar metric is also appended to `logs/metrics.jsonl`; complete trainer stdout and stderr go to `logs/training.log` at every level. Before training, the launcher runs a short AR-only SGLang benchmark on the same visible GPUs, prompt source, prompt/response limits, and rollout parallelism. Its detailed result is stored in `artifacts/ar_baseline.json` and its console output in `logs/ar_baseline.log`; the target ms/token baseline is also written as a `phase=ar_baseline` row in `logs/metrics.jsonl`. The baseline is measured from the initial prepared target model once per run and reused after resume. The common launcher writes its preflight checks and status messages to `logs/launcher.log`. The server wrapper runs its initial dependency/import preflight before the run directory is opened, so that initial output appears in the terminal; later launcher output is saved. Logs and metrics append when the run resumes.
 

@@ -1528,7 +1528,16 @@ class RayPPOTrainer:
             rollout_skip.wrap_generate_sequences()
 
         # add tqdm
-        progress_bar = tqdm(total=self.total_training_steps, initial=self.global_steps, desc="Training Progress")
+        progress_bar = tqdm(
+            total=self.total_training_steps,
+            initial=self.global_steps,
+            desc="Training Progress",
+            bar_format=(
+                "{desc}: {percentage:5.1f}% |{bar:20}| {n_fmt}/{total_fmt} "
+                "| elapsed {elapsed} | ETA {remaining} | {rate_fmt}"
+            ),
+            ascii=True,
+        )
 
         # we start from step 1
         self.global_steps += 1

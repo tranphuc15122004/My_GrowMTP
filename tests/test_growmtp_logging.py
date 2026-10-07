@@ -1,3 +1,4 @@
+import ast
 import importlib.util
 import json
 import subprocess
@@ -133,6 +134,68 @@ def test_compact_terminal_filters_chatter_but_training_log_keeps_every_line(tmp_
         "ValueError: invalid batch",
     ):
         assert line in full_log
+
+
+@pytest.mark.parametrize("level", ["compact", "normal"])
+def test_native_training_progress_shows_eta_after_resume_and_survives_redirection(tmp_path, level):
+    # Execute the trainer's actual tqdm construction without importing the GPU trainer.
+    trainer = REPO_ROOT / "verl" / "verl" / "trainer" / "ppo" / "ray_trainer.py"
+    tree = ast.parse(trainer.read_text())
+    call = next(
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "tqdm"
+        and any(keyword.arg == "desc" and isinstance(keyword.value, ast.Constant)
+                and keyword.value.value == "Training Progress" for keyword in node.keywords)
+    )
+    source = "\n".join([
+        "from tqdm import tqdm",
+        "import tqdm.std as tqdm_std",
+        "from types import SimpleNamespace",
+        "clock = [100.0]",
+        "tqdm_std.time = lambda: clock[0]",
+        "self = SimpleNamespace(total_training_steps=10, global_steps=4)",
+        f"bar = {ast.unparse(call)}",
+        "clock[0] += 40.0",
+        "bar.update(1)",
+        "bar.close()",
+    ])
+    result, log_path = _run_logged(tmp_path, level, source)
+    assert result.returncode == 0, result.stderr
+    for output in (result.stdout, log_path.read_text()):
+        assert "Training Progress" in output
+        assert "5/10" in output
+        assert "ETA 03:20" in output  # five remaining steps at 40 seconds each
+        assert "elapsed 00:40" in output
+        assert "40.00s/it" in output
+        assert "\r" not in output
+
+
+def test_native_training_progress_finishes_with_zero_eta(tmp_path):
+    trainer = REPO_ROOT / "verl" / "verl" / "trainer" / "ppo" / "ray_trainer.py"
+    tree = ast.parse(trainer.read_text())
+    call = next(
+        node for node in ast.walk(tree)
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "tqdm"
+        and any(keyword.arg == "desc" and isinstance(keyword.value, ast.Constant)
+                and keyword.value.value == "Training Progress" for keyword in node.keywords)
+    )
+    source = "\n".join([
+        "from tqdm import tqdm",
+        "import tqdm.std as tqdm_std",
+        "from types import SimpleNamespace",
+        "clock = [100.0]",
+        "tqdm_std.time = lambda: clock[0]",
+        "self = SimpleNamespace(total_training_steps=10, global_steps=9)",
+        f"bar = {ast.unparse(call)}",
+        "clock[0] += 40.0",
+        "bar.update(1)",
+        "bar.close()",
+    ])
+    result, log_path = _run_logged(tmp_path, "compact", source)
+    assert result.returncode == 0, result.stderr
+    for output in (result.stdout, log_path.read_text()):
+        assert "10/10" in output
+        assert "ETA 00:00" in output
 
 
 @pytest.mark.parametrize("level", ["normal", "debug"])
