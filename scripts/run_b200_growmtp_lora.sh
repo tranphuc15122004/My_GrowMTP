@@ -9,6 +9,12 @@ DATA_DIR="${DATA_DIR:-/workspace/storage-shared/nlp/dungdx4/phuc_projects/data/D
 TRAIN_FILE="${TRAIN_FILE:-${DATA_DIR}/train.parquet}"
 VAL_FILE="${VAL_FILE:-${DATA_DIR}/test.parquet}"
 PROMPT_KEY="${PROMPT_KEY:-prompt}"
+GROWMTP_REWARD_FILE="${GROWMTP_REWARD_FILE:-}"
+GROWMTP_ENABLE_THINKING="${GROWMTP_ENABLE_THINKING:-}"
+VAL_MAX_SAMPLES="${VAL_MAX_SAMPLES:--1}"
+GROWMTP_SEED="${GROWMTP_SEED:-1}"
+GROWMTP_DATA_MANIFEST="${GROWMTP_DATA_MANIFEST:-}"
+RUN_LABEL="${RUN_LABEL:-}"
 
 BASE_MODEL="${BASE_MODEL:-Qwen/Qwen3-4B}"
 RUN_BASE_DIR="${RUN_BASE_DIR:-/workspace/storage-shared/nlp/dungdx4/phuc_projects/outputs/qwen3-4b-growmtp-lora/runs}"
@@ -58,6 +64,11 @@ ATTN_IMPLEMENTATION="${ATTN_IMPLEMENTATION:-sdpa}"
 # EXTRA_HYDRA_OVERRIDES+=(actor_rollout_ref.actor.optim.lr=1e-6)
 EXTRA_HYDRA_OVERRIDES=(
     "++actor_rollout_ref.model.override_config.attn_implementation=${ATTN_IMPLEMENTATION}"
+    "data.seed=${GROWMTP_SEED}"
+    "actor_rollout_ref.actor.data_loader_seed=${GROWMTP_SEED}"
+    "actor_rollout_ref.actor.fsdp_config.seed=${GROWMTP_SEED}"
+    "actor_rollout_ref.ref.fsdp_config.seed=${GROWMTP_SEED}"
+    "++actor_rollout_ref.rollout.engine_kwargs.sglang.random_seed=${GROWMTP_SEED}"
 )
 
 die() {
@@ -98,7 +109,9 @@ elif [[ -n "${RUN_OUTPUT_DIR:-}" && -n "${PREPARED_MODEL_DIR:-}" ]]; then
     CHECKPOINT_DIR="$RUN_OUTPUT_DIR"
 else
     RUN_STAMP="$(date -u '+%Y%m%dT%H%M%SZ')"
-    RUN_DIR="$RUN_BASE_DIR/qwen3-4b-growmtp-${RUN_MODE}-${RUN_STAMP}-$$"
+    RUN_LABEL_SUFFIX=""
+    [[ -z "$RUN_LABEL" ]] || RUN_LABEL_SUFFIX="-${RUN_LABEL}"
+    RUN_DIR="$RUN_BASE_DIR/qwen3-4b-growmtp-${RUN_MODE}${RUN_LABEL_SUFFIX}-${RUN_STAMP}-$$"
     CHECKPOINT_DIR="$RUN_DIR/checkpoints"
     PREPARED_MODEL_DIR="$RUN_DIR/prepared_model"
 fi
@@ -160,6 +173,34 @@ elif [[ -n "$AR_BASELINE_TOKENS_PER_SECOND_PER_GPU" ]]; then
 fi
 [[ -f "$TRAIN_FILE" ]] || die "Training parquet not found: $TRAIN_FILE"
 [[ -f "$VAL_FILE" ]] || die "Validation/test parquet not found: $VAL_FILE"
+[[ "$GROWMTP_SEED" =~ ^[0-9]+$ ]] || die "GROWMTP_SEED must be a non-negative integer"
+export PYTHONHASHSEED="$GROWMTP_SEED"
+if [[ -n "$GROWMTP_DATA_MANIFEST" ]]; then
+    [[ -f "$GROWMTP_DATA_MANIFEST" ]] || die "Data manifest not found: $GROWMTP_DATA_MANIFEST"
+    "$GROWMTP_PYTHON" "$SCRIPT_DIR/validate_vn_summarization_data.py" \
+        --manifest "$GROWMTP_DATA_MANIFEST" \
+        --seed "$GROWMTP_SEED" \
+        --max-prompt-length "$MAX_PROMPT_LENGTH" || die "Vietnamese summarization data preflight failed"
+fi
+if [[ -n "$GROWMTP_REWARD_FILE" ]]; then
+    [[ -f "$GROWMTP_REWARD_FILE" ]] || die "Reward function file not found: $GROWMTP_REWARD_FILE"
+    GROWMTP_REWARD_FILE="$(realpath -- "$GROWMTP_REWARD_FILE")"
+    EXTRA_HYDRA_OVERRIDES+=("reward.custom_reward_function.path=$GROWMTP_REWARD_FILE")
+fi
+if [[ -n "$GROWMTP_ENABLE_THINKING" ]]; then
+    [[ "$GROWMTP_ENABLE_THINKING" == 0 || "$GROWMTP_ENABLE_THINKING" == 1 ]] || \
+        die "GROWMTP_ENABLE_THINKING must be 0 or 1"
+    if [[ "$GROWMTP_ENABLE_THINKING" == 0 ]]; then
+        EXTRA_HYDRA_OVERRIDES+=("++data.apply_chat_template_kwargs.enable_thinking=false")
+    else
+        EXTRA_HYDRA_OVERRIDES+=("++data.apply_chat_template_kwargs.enable_thinking=true")
+    fi
+fi
+[[ "$VAL_MAX_SAMPLES" == -1 || "$VAL_MAX_SAMPLES" =~ ^[1-9][0-9]*$ ]] || \
+    die "VAL_MAX_SAMPLES must be -1 or a positive integer"
+if [[ "$VAL_MAX_SAMPLES" != -1 ]]; then
+    EXTRA_HYDRA_OVERRIDES+=("data.val_max_samples=$VAL_MAX_SAMPLES")
+fi
 [[ "$LORA_RANK" =~ ^[1-9][0-9]*$ ]] || die "LORA_RANK must be a positive integer"
 [[ "$LORA_ALPHA" =~ ^[1-9][0-9]*$ ]] || die "LORA_ALPHA must be a positive integer"
 [[ "$TRAIN_GPUS" =~ ^[1-9][0-9]*$ ]] || die "TRAIN_GPUS must be a positive integer"
@@ -377,7 +418,9 @@ write_resume_config() {
         printf '#!/usr/bin/env bash\nset -euo pipefail\n'
         local name
         for name in \
-            GROWMTP_PYTHON DATA_DIR TRAIN_FILE VAL_FILE PROMPT_KEY BASE_MODEL RUN_BASE_DIR RUN_DIR RAY_TEMP_DIR \
+            GROWMTP_PYTHON DATA_DIR TRAIN_FILE VAL_FILE PROMPT_KEY GROWMTP_REWARD_FILE \
+            GROWMTP_ENABLE_THINKING VAL_MAX_SAMPLES GROWMTP_SEED GROWMTP_DATA_MANIFEST RUN_LABEL \
+            BASE_MODEL RUN_BASE_DIR RUN_DIR RAY_TEMP_DIR \
             RUN_MODE GPU_IDS TRAIN_GPUS B200_MIN_MEMORY_MIB LOG_LEVEL SAVE_GENERATIONS DATALOADER_NUM_WORKERS LORA_RANK LORA_ALPHA \
             TARGET_MODULES_JSON FULL_TEST_FREQ REQUIRE_B200 ATTN_IMPLEMENTATION TRAIN_STEPS \
             RESPONSE_LENGTH TRAIN_BATCH_SIZE ROLLOUT_N AGENT_LOOP_WORKERS PPO_MINI_BATCH_SIZE \
@@ -412,6 +455,8 @@ printf '%s\n' \
     "run_dir=$RUN_DIR" \
     "ray_temp_dir=$RAY_TEMP_DIR" \
     "run_mode=$RUN_MODE" \
+    "run_label=$RUN_LABEL" \
+    "seed=$GROWMTP_SEED" \
     "gpu_ids=${GPU_IDS:-CUDA_VISIBLE_DEVICES}" \
     "b200_min_memory_mib=$B200_MIN_MEMORY_MIB" \
     "train_gpus=$TRAIN_GPUS" \
@@ -459,6 +504,7 @@ printf '%s\n' \
 printf '\n╭─ GrowMTP Qwen3-4B LoRA ──────────────────────────────\n'
 printf '│ Action      %s\n' "$RUN_ACTION"
 printf '│ Mode        %s (%s steps)\n' "$RUN_MODE" "$TRAIN_STEPS"
+printf '│ Seed        %s\n' "$GROWMTP_SEED"
 printf '│ GPU IDs     %s\n' "${GPU_IDS:-CUDA_VISIBLE_DEVICES}"
 printf '│ Train GPUs  %s\n' "$TRAIN_GPUS"
 printf '│ LoRA        rank %s · alpha %s · targets %s\n' "$LORA_RANK" "$LORA_ALPHA" "$TARGET_MODULES_JSON"
@@ -482,7 +528,8 @@ if [[ "$RUN_ACTION" == "fresh" && "$PREPARED_MODEL_REUSE" == 0 ]]; then
     printf '\nPreparing a fresh Qwen3-4B GrowMTP checkpoint at:\n%s\n' "$PREPARED_MODEL_DIR"
     GROWMTP_PYTHON="$GROWMTP_PYTHON" bash "$REPO_ROOT/scripts/prepare_model.sh" \
         --model-path "$BASE_MODEL" \
-        --output "$PREPARED_MODEL_DIR"
+        --output "$PREPARED_MODEL_DIR" \
+        --seed "$GROWMTP_SEED"
 elif [[ "$RUN_ACTION" == "fresh" ]]; then
     printf '\nReusing prepared model and restarting training at step 0:\n%s\n' "$PREPARED_MODEL_DIR"
 else
@@ -602,6 +649,7 @@ TRAIN_COMMAND=(
     "data.max_prompt_length=$MAX_PROMPT_LENGTH"
     "actor_rollout_ref.model.lora_rank=$LORA_RANK"
     "actor_rollout_ref.model.lora_alpha=$LORA_ALPHA"
+    "++actor_rollout_ref.model.lora_init_seed=$GROWMTP_SEED"
     actor_rollout_ref.model.lora.merge=true
     "actor_rollout_ref.model.target_modules=$TARGET_MODULES_JSON"
     "data.train_batch_size=$TRAIN_BATCH_SIZE"

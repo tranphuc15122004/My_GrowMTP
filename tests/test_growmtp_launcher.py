@@ -1,5 +1,6 @@
 import json
 import os
+import runpy
 import select
 import signal
 import subprocess
@@ -13,11 +14,13 @@ import pytest
 REPO_ROOT = Path(__file__).resolve().parents[1]
 LAUNCHER = REPO_ROOT / "scripts" / "run_b200_growmtp_lora.sh"
 SERVER_WRAPPER = REPO_ROOT / "scripts" / "run_b200_growmtp_lora_server.sh"
+SUMMARIZATION_WRAPPER = REPO_ROOT / "scripts" / "run_vn_summarization_growmtp.sh"
 
 
 FAKE_PYTHON = r'''#!/usr/bin/env python3
 import json
 import os
+import runpy
 import sys
 import time
 from pathlib import Path
@@ -33,6 +36,10 @@ if args[:3] == ["-m", "verl.trainer.mtp.launch", "prepare"]:
     (output / "prepared.marker").write_text("prepared")
     raise SystemExit(0)
 if args[:3] == ["-m", "verl.trainer.mtp.launch", "check"] or args[0:1] == ["-"]:
+    raise SystemExit(0)
+if args and args[0].endswith("validate_vn_summarization_data.py"):
+    sys.argv = args
+    runpy.run_path(args[0], run_name="__main__")
     raise SystemExit(0)
 if args and args[0].endswith("run_logged.py"):
     assert args[args.index("--level") + 1] == os.environ["GROWMTP_LOG_LEVEL"]
@@ -233,6 +240,124 @@ def test_launcher_aux_ce_disables_exact_kl_probe(tmp_path):
     assert "++actor_rollout_ref.model.mtp.comparison_probe_frequency=0" in args
     assert "++actor_rollout_ref.model.mtp.rollout_aux_ce_lambda=0.125" in args
     assert "++actor_rollout_ref.model.mtp.rollout_aux_advantage_clip=1.5" in args
+
+
+def test_launcher_accepts_summarization_reward_and_preserves_it_on_resume(tmp_path):
+    env = _fake_environment(tmp_path, save_generations=0)
+    reward_file = REPO_ROOT / "scripts" / "vn_summarization_reward.py"
+    env.update({
+        "GROWMTP_REWARD_FILE": str(reward_file),
+        "GROWMTP_ENABLE_THINKING": "0",
+        "VAL_MAX_SAMPLES": "32",
+    })
+    result = subprocess.run(
+        ["bash", str(LAUNCHER)], cwd=REPO_ROOT, env=env,
+        capture_output=True, text=True, timeout=20, check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    args = set(_training_args(tmp_path))
+    assert f"reward.custom_reward_function.path={reward_file}" in args
+    assert "++data.apply_chat_template_kwargs.enable_thinking=false" in args
+    assert "data.val_max_samples=32" in args
+    resume_script = next((tmp_path / "runs").glob("*/config/resume.sh"))
+    resume_text = resume_script.read_text()
+    assert "GROWMTP_REWARD_FILE" in resume_text
+    assert "GROWMTP_ENABLE_THINKING" in resume_text
+    assert "VAL_MAX_SAMPLES" in resume_text
+
+
+def test_launcher_uses_one_seed_for_data_lora_mtp_and_rollout(tmp_path):
+    env = _fake_environment(tmp_path, save_generations=0)
+    env["GROWMTP_SEED"] = "23"
+    result = subprocess.run(
+        ["bash", str(LAUNCHER)], cwd=REPO_ROOT, env=env,
+        capture_output=True, text=True, timeout=20, check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    args = set(_training_args(tmp_path))
+    assert "data.seed=23" in args
+    assert "actor_rollout_ref.actor.data_loader_seed=23" in args
+    assert "actor_rollout_ref.actor.fsdp_config.seed=23" in args
+    assert "actor_rollout_ref.ref.fsdp_config.seed=23" in args
+    assert "++actor_rollout_ref.rollout.engine_kwargs.sglang.random_seed=23" in args
+    assert "++actor_rollout_ref.model.lora_init_seed=23" in args
+    assert "actor_rollout_ref.model.lora_rank=16" in args
+    assert "actor_rollout_ref.model.lora_alpha=32" in args
+    assert "actor_rollout_ref.model.lora.merge=true" in args
+
+    resume_script = next((tmp_path / "runs").glob("*/config/resume.sh"))
+    assert 'export GROWMTP_SEED=23' in resume_script.read_text()
+
+
+def test_fresh_model_preparation_receives_the_common_seed(tmp_path):
+    env = _fake_environment(tmp_path, save_generations=0)
+    env["GROWMTP_SEED"] = "31"
+    result = subprocess.run(
+        ["bash", str(LAUNCHER)], cwd=REPO_ROOT, env=env,
+        capture_output=True, text=True, timeout=20, check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    calls = [json.loads(line) for line in (tmp_path / "fake-python.log").read_text().splitlines()]
+    prepare_call = next(call for call in calls if call[:3] == ["-m", "verl.trainer.mtp.launch", "prepare"])
+    assert prepare_call[prepare_call.index("--seed") + 1] == "31"
+
+
+def test_summarization_wrapper_sets_task_configuration(tmp_path):
+    env = _fake_environment(tmp_path, save_generations=0)
+    data_dir = Path(env["TRAIN_FILE"]).parent
+    (data_dir / "manifest.json").write_text(json.dumps({
+        "seed": 1,
+        "train_rows": 8,
+        "validation_rows": 2,
+        "prompt_audit": {
+            "max_prompt_tokens": 3000,
+            "max_prompt_length": 4096,
+            "tokenizer": "qwen3-4b",
+        },
+    }))
+    env["DATA_DIR"] = str(data_dir)
+    result = subprocess.run(
+        ["bash", str(SUMMARIZATION_WRAPPER), "--gpuid", "0,1"], cwd=REPO_ROOT, env=env,
+        capture_output=True, text=True, timeout=20, check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    args = set(_training_args(tmp_path))
+    assert "--response-length" in args
+    assert "256" in args
+    assert "data.max_prompt_length=4096" in args
+    assert "data.train_batch_size=1" in args
+    assert "actor_rollout_ref.rollout.n=2" in args
+    assert "++actor_rollout_ref.model.mtp.comparison_probe_frequency=0" in args
+    assert "++actor_rollout_ref.model.mtp.rollout_aux_ce_lambda=0" in args
+    assert "++data.apply_chat_template_kwargs.enable_thinking=false" in args
+    assert "data.seed=1" in args
+    assert "actor_rollout_ref.model.lora_rank=16" in args
+
+
+def test_summarization_wrapper_stops_when_manifest_seed_differs(tmp_path):
+    env = _fake_environment(tmp_path, save_generations=0)
+    data_dir = Path(env["TRAIN_FILE"]).parent
+    (data_dir / "manifest.json").write_text(json.dumps({
+        "seed": 99,
+        "train_rows": 8,
+        "validation_rows": 2,
+        "prompt_audit": {
+            "max_prompt_tokens": 3000,
+            "max_prompt_length": 4096,
+            "tokenizer": "qwen3-4b",
+        },
+    }))
+    env["DATA_DIR"] = str(data_dir)
+    env["GROWMTP_SEED"] = "1"
+
+    result = subprocess.run(
+        ["bash", str(SUMMARIZATION_WRAPPER), "--gpuid", "0,1"], cwd=REPO_ROOT, env=env,
+        capture_output=True, text=True, timeout=20, check=False,
+    )
+
+    assert result.returncode != 0
+    assert "does not match GROWMTP_SEED" in result.stdout + result.stderr
+    assert not (next((tmp_path / "runs").glob("*/logs"), tmp_path / "missing") / "training.log").exists()
 
 
 def test_launcher_saves_and_restores_comparison_measurement_overrides(tmp_path):

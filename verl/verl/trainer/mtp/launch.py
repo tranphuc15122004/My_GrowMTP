@@ -30,6 +30,20 @@ def check(args=None):
     print("CUDA devices:", torch.cuda.device_count())
 
 
+def initialize_mtp_head(head, config, seed: int) -> None:
+    """Initialize the random GrowMTP head deterministically from the run seed."""
+    import torch
+
+    torch.manual_seed(seed)
+    for module in head.modules():
+        if isinstance(module, torch.nn.Linear):
+            torch.nn.init.normal_(module.weight, mean=0.0, std=config.initializer_range)
+            if module.bias is not None:
+                torch.nn.init.zeros_(module.bias)
+        elif "RMSNorm" in type(module).__name__:
+            torch.nn.init.ones_(module.weight)
+
+
 def prepare(args):
     import torch
     from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer
@@ -46,14 +60,7 @@ def prepare(args):
         args.model_path, dtype=torch.bfloat16, trust_remote_code=False
     )
     head = MTPHead(config)
-    torch.manual_seed(0)
-    for module in head.modules():
-        if isinstance(module, torch.nn.Linear):
-            torch.nn.init.normal_(module.weight, mean=0.0, std=config.initializer_range)
-            if module.bias is not None:
-                torch.nn.init.zeros_(module.bias)
-        elif "RMSNorm" in type(module).__name__:
-            torch.nn.init.ones_(module.weight)
+    initialize_mtp_head(head, config, seed=args.seed)
     model.mtp = head.to(torch.bfloat16)
     model.config.architectures = ["Qwen3ForCausalLM"]
     model.save_pretrained(destination)
@@ -189,6 +196,7 @@ def main():
     p = sub.add_parser("prepare")
     p.add_argument("--model-path", required=True)
     p.add_argument("--output", required=True)
+    p.add_argument("--seed", type=int, default=0)
     for command in ("train", "infer"):
         p = sub.add_parser(command)
         p.add_argument("--model", choices=list(presets()), required=True)

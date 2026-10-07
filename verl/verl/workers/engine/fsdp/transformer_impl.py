@@ -330,6 +330,10 @@ class FSDPEngine(BaseEngine):
                 "exclude_modules": convert_to_regular_types(self.model_config.exclude_modules),
                 "bias": "none",
             }
+            lora_init_seed = getattr(self.model_config, "lora_init_seed", None)
+            if lora_init_seed is not None:
+                # Recreate the same adapter initialization for paired GrowMTP runs.
+                torch.manual_seed(lora_init_seed)
             module = get_peft_model(module, LoraConfig(**lora_config))
 
         return module
