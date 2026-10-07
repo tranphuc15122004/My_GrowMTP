@@ -48,7 +48,8 @@ def test_sample_converts_to_verl_schema_without_split_leakage(tmp_path):
         assert row["reward_model"]["style"] == "rule"
         assert row["reward_model"]["ground_truth"]
     assert pq.ParquetFile(destination / "train.parquet").metadata.num_row_groups > 0
-    loaded = load_dataset("parquet", data_files=str(destination / "train.parquet"), split="train")
+    loaded = load_dataset("parquet", data_files=str(destination / "train.parquet"), split="train",
+                          cache_dir=str(tmp_path / "hf-cache"))
     assert len(loaded) == len(train)
     assert loaded[0]["reward_model"]["ground_truth"] == train[0]["reward_model"]["ground_truth"]
     manifest = json.loads((destination / "manifest.json").read_text())
@@ -221,6 +222,106 @@ def test_existing_output_is_never_overwritten(tmp_path):
     result = prepare(ROOT / "data" / "sample.txt", destination)
     assert result.returncode != 0
     assert marker.read_text() == "untouched"
+
+
+def test_drop_overlong_requires_tokenizer_and_creates_no_output(tmp_path):
+    destination = tmp_path / "filtered"
+    result = prepare(ROOT / "data" / "sample.txt", destination, "--drop-overlong-prompts")
+    assert result.returncode != 0
+    assert "--drop-overlong-prompts requires --tokenizer" in result.stderr
+    assert not destination.exists()
+
+
+def test_drop_overlong_preserves_split_content_and_boundary(tmp_path, local_chat_tokenizer):
+    tokenizer, tokenizer_path = local_chat_tokenizer
+    records = [
+        {"id": str(i), "text": f"Bài báo ngắn số {i}.", "summary": f"Tóm tắt số {i}."}
+        for i in range(6)
+    ] + [
+        {"id": "boundary", "text": " ".join(["ranh"] * 20), "summary": "Tóm tắt ranh giới."},
+        {"id": "long", "text": " ".join(["dài"] * 100), "summary": "Tóm tắt bài dài."},
+        {"id": "long-duplicate", "text": " ".join(["dài"] * 100), "summary": "Bản khác."},
+    ]
+    source = tmp_path / "source.jsonl"
+    source.write_text("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in records))
+    module = runpy.run_path(str(PREPARE))
+    boundary = module["convert_record"](records[6], 7)
+    limit = len(tokenizer.apply_chat_template(
+        boundary["prompt"], tokenize=True, add_generation_prompt=True,
+        enable_thinking=False, return_dict=False,
+    ))
+    original = tmp_path / "original"
+    result = prepare(source, original, "--seed", "23", "--validation-fraction", "0.4")
+    assert result.returncode == 0, result.stderr
+    original_bytes = {path.name: path.read_bytes() for path in original.iterdir()}
+
+    strict = tmp_path / "strict"
+    result = prepare(source, strict, "--tokenizer", str(tokenizer_path), "--max-prompt-length", str(limit))
+    assert result.returncode != 0
+    assert "exceeds max_prompt_length" in result.stderr
+    assert not strict.exists()
+
+    filtered = tmp_path / "filtered"
+    arguments = ("--seed", "23", "--validation-fraction", "0.4", "--tokenizer", str(tokenizer_path),
+                 "--max-prompt-length", str(limit), "--drop-overlong-prompts")
+    result = prepare(source, filtered, *arguments)
+    assert result.returncode == 0, result.stderr
+    kept = []
+    dropped_counts = {}
+    for filename in ("train.parquet", "validation.parquet"):
+        before = pq.read_table(original / filename).to_pylist()
+        after = pq.read_table(filtered / filename).to_pylist()
+        expected = [row for row in before if row["extra_info"]["id"] not in {"long", "long-duplicate"}]
+        assert after == expected
+        assert after
+        assert pq.read_schema(filtered / filename) == pq.read_schema(original / filename)
+        kept.extend(after)
+        dropped_counts[filename] = len(before) - len(after)
+    assert len(kept) == 7
+    assert "boundary" in {row["extra_info"]["id"] for row in kept}
+    manifest = json.loads((filtered / "manifest.json").read_text())
+    assert manifest["seed"] == 23
+    assert manifest["train_rows"] + manifest["validation_rows"] == 7
+    assert manifest["prompt_audit"]["prompt_count"] == 7
+    assert manifest["prompt_audit"]["max_prompt_tokens"] == limit
+    filtering = manifest["prompt_filter"]
+    assert filtering["source_rows"] == 9
+    assert filtering["kept_rows"] == 7
+    assert filtering["dropped_rows"] == 2
+    assert filtering["max_prompt_length"] == limit
+    assert filtering["max_prompt_tokens_before"] > limit
+    assert filtering["dropped_train_rows"] == dropped_counts["train.parquet"]
+    assert filtering["dropped_validation_rows"] == dropped_counts["validation.parquet"]
+    assert all((original / name).read_bytes() == content for name, content in original_bytes.items())
+    loaded = load_dataset("parquet", data_files=str(filtered / "train.parquet"), split="train",
+                          cache_dir=str(tmp_path / "hf-cache"))
+    assert len(loaded) == manifest["train_rows"]
+
+    repeated = tmp_path / "repeated"
+    result = prepare(source, repeated, *arguments)
+    assert result.returncode == 0, result.stderr
+    for filename in ("train.parquet", "validation.parquet", "manifest.json"):
+        assert (filtered / filename).read_bytes() == (repeated / filename).read_bytes()
+
+
+@pytest.mark.parametrize("keep_short", [False, True])
+def test_drop_overlong_rejects_empty_split_before_writing(tmp_path, local_chat_tokenizer, keep_short):
+    tokenizer, tokenizer_path = local_chat_tokenizer
+    source = tmp_path / "source.jsonl"
+    records = [
+        {"id": "short", "text": "Bài báo ngắn.", "summary": "Tóm tắt."},
+        {"id": "long", "text": " ".join(["dài"] * 100), "summary": "Tóm tắt."},
+    ]
+    source.write_text("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in records))
+    module = runpy.run_path(str(PREPARE))
+    prompt = module["convert_record"](records[0], 1)["prompt"]
+    limit = len(tokenizer.apply_chat_template(prompt, tokenize=True, return_dict=False)) if keep_short else 1
+    destination = tmp_path / "filtered"
+    result = prepare(source, destination, "--tokenizer", str(tokenizer_path),
+                     "--max-prompt-length", str(limit), "--drop-overlong-prompts")
+    assert result.returncode != 0
+    assert "non-empty train and validation" in result.stderr
+    assert not destination.exists()
 
 
 def test_reward_is_bounded_and_has_learning_signal():

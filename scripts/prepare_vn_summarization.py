@@ -90,10 +90,8 @@ def split_rows(rows: list[dict], validation_fraction: float, seed: int) -> tuple
     return train, validation
 
 
-def audit_prompt_lengths(rows: list[dict], tokenizer, max_prompt_length: int) -> dict:
-    """Measure complete Qwen chat prompts and reject inputs GrowMTP would truncate."""
-    if max_prompt_length < 1:
-        raise ValueError("max_prompt_length must be a positive integer")
+def measure_prompt_lengths(rows: list[dict], tokenizer) -> list[int]:
+    """Count the complete chat prompt, including the generation template."""
     lengths = []
     for row in tqdm(rows, desc="Auditing prompt tokens"):
         token_ids = tokenizer.apply_chat_template(
@@ -110,6 +108,14 @@ def audit_prompt_lengths(rows: list[dict], tokenizer, max_prompt_length: int) ->
         lengths.append(len(token_ids))
     if not lengths:
         raise ValueError("Cannot audit an empty prompt dataset")
+    return lengths
+
+
+def audit_lengths(lengths: list[int], max_prompt_length: int) -> dict:
+    if max_prompt_length < 1:
+        raise ValueError("max_prompt_length must be a positive integer")
+    if not lengths:
+        raise ValueError("Cannot audit an empty prompt dataset")
     ordered = sorted(lengths)
     maximum = ordered[-1]
     audit = {
@@ -123,9 +129,14 @@ def audit_prompt_lengths(rows: list[dict], tokenizer, max_prompt_length: int) ->
             f"Prompt length {maximum} exceeds max_prompt_length={max_prompt_length}; "
             f"p95={audit['p95_prompt_tokens']}, "
             f"over_limit={sum(length > max_prompt_length for length in lengths)}/{len(lengths)}; "
-            "increase the limit and audit again before training"
+            "increase the limit or prepare with --drop-overlong-prompts before training"
         )
     return audit
+
+
+def audit_prompt_lengths(rows: list[dict], tokenizer, max_prompt_length: int) -> dict:
+    """Measure complete Qwen chat prompts and reject inputs GrowMTP would truncate."""
+    return audit_lengths(measure_prompt_lengths(rows, tokenizer), max_prompt_length)
 
 
 def main() -> None:
@@ -138,6 +149,10 @@ def main() -> None:
     parser.add_argument(
         "--max-prompt-length", type=int, default=int(os.environ.get("MAX_PROMPT_LENGTH", "4096"))
     )
+    parser.add_argument(
+        "--drop-overlong-prompts", action="store_true",
+        help="Drop complete prompts above --max-prompt-length after splitting; requires --tokenizer",
+    )
     args = parser.parse_args()
     if not 0 < args.validation_fraction < 1:
         parser.error("--validation-fraction must be between 0 and 1")
@@ -145,6 +160,8 @@ def main() -> None:
         parser.error("--seed must be a non-negative integer")
     if args.max_prompt_length < 1:
         parser.error("--max-prompt-length must be positive")
+    if args.drop_overlong_prompts and not args.tokenizer:
+        parser.error("--drop-overlong-prompts requires --tokenizer")
     if not args.input.is_file():
         parser.error(f"Input JSONL not found: {args.input}")
     if args.output_dir.exists():
@@ -153,22 +170,56 @@ def main() -> None:
     rows = load_rows(args.input)
     train, validation = split_rows(rows, args.validation_fraction, args.seed)
     prompt_audit = None
+    prompt_filter = None
     if args.tokenizer:
         from transformers import AutoTokenizer
 
         tokenizer = AutoTokenizer.from_pretrained(args.tokenizer, trust_remote_code=False)
-        prompt_audit = audit_prompt_lengths(rows, tokenizer, args.max_prompt_length)
+        if args.drop_overlong_prompts:
+            # Filter after splitting so surviving records keep their original partition/order.
+            train_count, validation_count = len(train), len(validation)
+            lengths = measure_prompt_lengths(train + validation, tokenizer)
+            train = [row for row, length in zip(train, lengths[:train_count])
+                     if length <= args.max_prompt_length]
+            validation = [row for row, length in zip(validation, lengths[train_count:])
+                          if length <= args.max_prompt_length]
+            if not train or not validation:
+                parser.error("Prompt filtering must leave non-empty train and validation splits")
+            kept_lengths = [length for length in lengths if length <= args.max_prompt_length]
+            prompt_audit = audit_lengths(kept_lengths, args.max_prompt_length)
+            prompt_filter = {
+                "max_prompt_length": args.max_prompt_length,
+                "source_rows": len(rows),
+                "kept_rows": len(train) + len(validation),
+                "dropped_rows": len(rows) - len(train) - len(validation),
+                "dropped_train_rows": train_count - len(train),
+                "dropped_validation_rows": validation_count - len(validation),
+                "max_prompt_tokens_before": max(lengths),
+            }
+            print(
+                f"Dropped {prompt_filter['dropped_rows']:,}/{len(rows):,} overlong prompts "
+                f"(train={prompt_filter['dropped_train_rows']:,}, "
+                f"validation={prompt_filter['dropped_validation_rows']:,}); "
+                f"kept max_prompt_tokens={prompt_audit['max_prompt_tokens']:,}/{args.max_prompt_length:,}"
+            )
+        else:
+            prompt_audit = audit_prompt_lengths(rows, tokenizer, args.max_prompt_length)
         prompt_audit["tokenizer"] = str(args.tokenizer)
     args.output_dir.mkdir(parents=True, exist_ok=False)
     pq.write_table(pa.Table.from_pylist(train, schema=SCHEMA), args.output_dir / "train.parquet")
     pq.write_table(pa.Table.from_pylist(validation, schema=SCHEMA), args.output_dir / "validation.parquet")
-    (args.output_dir / "manifest.json").write_text(json.dumps({
+    manifest = {
         "source": str(args.input.resolve()), "seed": args.seed,
         "train_rows": len(train), "validation_rows": len(validation),
         "validation_fraction_requested": args.validation_fraction,
-        "unique_articles": len({r["prompt"][0]["content"] for r in rows}),
+        "unique_articles": len({r["prompt"][0]["content"] for r in train + validation}),
         "prompt_audit": prompt_audit,
-    }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    }
+    if prompt_filter is not None:
+        manifest["prompt_filter"] = prompt_filter
+    (args.output_dir / "manifest.json").write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
     print(f"Prepared {len(train):,} train and {len(validation):,} validation records in {args.output_dir}")
 
 
