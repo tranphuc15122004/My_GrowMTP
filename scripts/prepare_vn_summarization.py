@@ -168,13 +168,18 @@ def main() -> None:
         parser.error(f"Output directory already exists: {args.output_dir}")
 
     rows = load_rows(args.input)
+    print(f"Loaded {len(rows):,} records; splitting train/validation with seed={args.seed}...", flush=True)
     train, validation = split_rows(rows, args.validation_fraction, args.seed)
+    print(f"Split ready: {len(train):,} train, {len(validation):,} validation before filtering.", flush=True)
     prompt_audit = None
     prompt_filter = None
     if args.tokenizer:
+        print("Importing Transformers tokenizer dependencies...", flush=True)
         from transformers import AutoTokenizer
 
+        print(f"Loading tokenizer: {args.tokenizer}", flush=True)
         tokenizer = AutoTokenizer.from_pretrained(args.tokenizer, trust_remote_code=False)
+        print(f"Tokenizer ready; auditing complete prompts (limit={args.max_prompt_length:,} tokens)...", flush=True)
         if args.drop_overlong_prompts:
             # Filter after splitting so surviving records keep their original partition/order.
             train_count, validation_count = len(train), len(validation)
@@ -200,13 +205,16 @@ def main() -> None:
                 f"Dropped {prompt_filter['dropped_rows']:,}/{len(rows):,} overlong prompts "
                 f"(train={prompt_filter['dropped_train_rows']:,}, "
                 f"validation={prompt_filter['dropped_validation_rows']:,}); "
-                f"kept max_prompt_tokens={prompt_audit['max_prompt_tokens']:,}/{args.max_prompt_length:,}"
+                f"kept max_prompt_tokens={prompt_audit['max_prompt_tokens']:,}/{args.max_prompt_length:,}",
+                flush=True,
             )
         else:
             prompt_audit = audit_prompt_lengths(rows, tokenizer, args.max_prompt_length)
         prompt_audit["tokenizer"] = str(args.tokenizer)
     args.output_dir.mkdir(parents=True, exist_ok=False)
+    print(f"Writing train.parquet ({len(train):,} records)...", flush=True)
     pq.write_table(pa.Table.from_pylist(train, schema=SCHEMA), args.output_dir / "train.parquet")
+    print(f"Writing validation.parquet ({len(validation):,} records)...", flush=True)
     pq.write_table(pa.Table.from_pylist(validation, schema=SCHEMA), args.output_dir / "validation.parquet")
     manifest = {
         "source": str(args.input.resolve()), "seed": args.seed,
@@ -217,10 +225,11 @@ def main() -> None:
     }
     if prompt_filter is not None:
         manifest["prompt_filter"] = prompt_filter
+    print("Writing manifest.json...", flush=True)
     (args.output_dir / "manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )
-    print(f"Prepared {len(train):,} train and {len(validation):,} validation records in {args.output_dir}")
+    print(f"Prepared {len(train):,} train and {len(validation):,} validation records in {args.output_dir}", flush=True)
 
 
 if __name__ == "__main__":
